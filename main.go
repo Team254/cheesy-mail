@@ -17,7 +17,11 @@ func main() {
 	log.Println("Listening for incoming mail.")
 
 	for {
-		mail := <-mailReceivedChan
-		log.Printf("Message received: %v\n", mail)
+		message := <-messageReceivedChan
+		log.Println("Message received:")
+		log.Printf("From: %v", message.from)
+		log.Printf("To: %v", message.to)
+		log.Printf("Subject: %s", message.subject)
+		log.Printf("Body: %s", message.body.HTML)
 	}
 }

@@ -20,19 +20,14 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"crypto/md5"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/sloonz/go-iconv"
-	"github.com/sloonz/go-qprintable"
+	"github.com/jhillyerd/go.enmime"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
-	"regexp"
+	"net/mail"
 	"runtime"
 	"strconv"
 	"strings"
@@ -48,10 +43,7 @@ type Client struct {
 	response    string
 	address     string
 	data        string
-	subject     string
-	hash        string
 	time        int64
-	tls_on      bool
 	conn        net.Conn
 	bufin       *bufio.Reader
 	bufout      *bufio.Writer
@@ -60,11 +52,11 @@ type Client struct {
 	clientId    int64
 }
 
-type Mail struct {
-	from    string
-	to      string
+type MailMessage struct {
+	from    *mail.Address
+	to      []*mail.Address
 	subject string
-	body    string
+	body    *enmime.MIMEBody
 }
 
 var max_size int // max email DATA size
@@ -72,7 +64,7 @@ var timeout time.Duration
 var allowedHosts = make(map[string]bool, 15)
 var sem chan int // currently active clients
 
-var mailReceivedChan chan *Mail // Channel for sending received messages to for downstream processing.
+var messageReceivedChan chan *MailMessage // Channel for sending received messages to for downstream processing.
 
 // Configurable values.
 var gConfig = map[string]string{
@@ -119,7 +111,7 @@ func configure() {
 	// currently active client list
 	sem = make(chan int, n)
 	// database writing workers
-	mailReceivedChan = make(chan *Mail, 10)
+	messageReceivedChan = make(chan *MailMessage, 10)
 	// timeout for reads
 	if n, n_err = strconv.Atoi(gConfig["GSMTP_TIMEOUT"]); n_err != nil {
 		timeout = time.Duration(10)
@@ -302,10 +294,6 @@ func readSmtp(client *Client) (input string, err error) {
 				err = errors.New("Maximum DATA size exceeded (" + strconv.Itoa(max_size) + ")")
 				return input, err
 			}
-			if client.state == 2 {
-				// Extract the subject while we are at it.
-				scanSubject(client, reply)
-			}
 		}
 		if err != nil {
 			break
@@ -315,24 +303,6 @@ func readSmtp(client *Client) (input string, err error) {
 		}
 	}
 	return input, err
-}
-
-// Scan the data part for a Subject line. Can be a multi-line
-func scanSubject(client *Client, reply string) {
-	if client.subject == "" && (len(reply) > 8) {
-		test := strings.ToUpper(reply[0:9])
-		if i := strings.Index(test, "SUBJECT: "); i == 0 {
-			// first line with \r\n
-			client.subject = reply[9:]
-		}
-	} else if strings.HasSuffix(client.subject, "\r\n") {
-		// chop off the \r\n
-		client.subject = client.subject[0 : len(client.subject)-2]
-		if (strings.HasPrefix(reply, " ")) || (strings.HasPrefix(reply, "\t")) {
-			// subject is multi-line
-			client.subject = client.subject + reply[1:]
-		}
-	}
 }
 
 func responseWrite(client *Client) (err error) {
@@ -345,155 +315,32 @@ func responseWrite(client *Client) (err error) {
 }
 
 func processMail(client *Client) (success bool) {
-	user, _, addr_err := validateEmailData(client)
-	if addr_err != nil { // user, host, addr_err
-		fmt.Println(fmt.Sprintln("mail_from didnt validate: %v", addr_err) + " client.mail_from:" + client.mail_from)
-		// notify client that a save completed, -1 = error
+	parsedMessage, err := mail.ReadMessage(bytes.NewBufferString(client.data))
+	if err != nil {
+		log.Printf("Error: %v\n", err)
 		return false
 	}
-
-	var mail Mail
-	mail.from = client.mail_from
-	mail.to = user + "@" + gConfig["GM_PRIMARY_MAIL_HOST"]
-	mail.subject = mimeHeaderDecode(client.subject)
-	mail.body = client.data
-	mailReceivedChan <- &mail
+	var message MailMessage
+	fromList, err := parsedMessage.Header.AddressList("From")
+	if err != nil {
+		log.Printf("Error: %v\n", err)
+		return false
+	}
+	message.from = fromList[0]
+	message.to, err = parsedMessage.Header.AddressList("To")
+	if err != nil {
+		log.Printf("Error: %v\n", err)
+		return false
+	}
+	message.subject = parsedMessage.Header.Get("Subject")
+	message.body, err = enmime.ParseMIMEBody(parsedMessage)
+	if err != nil {
+		log.Printf("Error: %v\n", err)
+		return false
+	}
+	messageReceivedChan <- &message
 
 	return true
-}
-
-func validateEmailData(client *Client) (user string, host string, addr_err error) {
-	if user, host, addr_err = extractEmail(client.mail_from); addr_err != nil {
-		return user, host, addr_err
-	}
-	client.mail_from = user + "@" + host
-	if user, host, addr_err = extractEmail(client.rcpt_to); addr_err != nil {
-		return user, host, addr_err
-	}
-	client.rcpt_to = user + "@" + host
-	// check if on allowed hosts
-	if allowed := allowedHosts[host]; !allowed {
-		return user, host, errors.New("invalid host:" + host)
-	}
-	return user, host, addr_err
-}
-
-func extractEmail(str string) (name string, host string, err error) {
-	re, _ := regexp.Compile(`<(.+?)@(.+?)>`) // go home regex, you're drunk!
-	if matched := re.FindStringSubmatch(str); len(matched) > 2 {
-		host = validHost(matched[2])
-		name = matched[1]
-	} else {
-		if res := strings.Split(str, "@"); len(res) > 1 {
-			name = res[0]
-			host = validHost(res[1])
-		}
-	}
-	if host == "" || name == "" {
-		err = errors.New("Invalid address, [" + name + "@" + host + "] address:" + str)
-	}
-	return name, host, err
-}
-
-// Decode strings in Mime header format
-// eg. =?ISO-2022-JP?B?GyRCIVo9dztSOWJAOCVBJWMbKEI=?=
-func mimeHeaderDecode(str string) string {
-	reg, _ := regexp.Compile(`=\?(.+?)\?([QBqp])\?(.+?)\?=`)
-	matched := reg.FindAllStringSubmatch(str, -1)
-	var charset, encoding, payload string
-	if matched != nil {
-		for i := 0; i < len(matched); i++ {
-			if len(matched[i]) > 2 {
-				charset = matched[i][1]
-				encoding = strings.ToUpper(matched[i][2])
-				payload = matched[i][3]
-				switch encoding {
-				case "B":
-					str = strings.Replace(str, matched[i][0], mailTransportDecode(payload, "base64", charset), 1)
-				case "Q":
-					str = strings.Replace(str, matched[i][0], mailTransportDecode(payload, "quoted-printable", charset), 1)
-				}
-			}
-		}
-	}
-	return str
-}
-
-func validHost(host string) string {
-	host = strings.Trim(host, " ")
-	re, _ := regexp.Compile(`^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$`)
-	if re.MatchString(host) {
-		return host
-	}
-	return ""
-}
-
-// decode from 7bit to 8bit UTF-8
-// encoding_type can be "base64" or "quoted-printable"
-func mailTransportDecode(str string, encoding_type string, charset string) string {
-	if charset == "" {
-		charset = "UTF-8"
-	} else {
-		charset = strings.ToUpper(charset)
-	}
-	if encoding_type == "base64" {
-		str = fromBase64(str)
-	} else if encoding_type == "quoted-printable" {
-		str = fromQuotedP(str)
-	}
-	if charset != "UTF-8" {
-		charset = fixCharset(charset)
-		// eg. charset can be "ISO-2022-JP"
-		convstr, err := iconv.Conv(str, "UTF-8", charset)
-		if err == nil {
-			return convstr
-		}
-	}
-	return str
-}
-
-func fromBase64(data string) string {
-	buf := bytes.NewBufferString(data)
-	decoder := base64.NewDecoder(base64.StdEncoding, buf)
-	res, _ := ioutil.ReadAll(decoder)
-	return string(res)
-}
-
-func fromQuotedP(data string) string {
-	buf := bytes.NewBufferString(data)
-	decoder := qprintable.NewDecoder(qprintable.BinaryEncoding, buf)
-	res, _ := ioutil.ReadAll(decoder)
-	return string(res)
-}
-
-func fixCharset(charset string) string {
-	reg, _ := regexp.Compile(`[_:.\/\\]`)
-	fixed_charset := reg.ReplaceAllString(charset, "-")
-	// Fix charset
-	// borrowed from http://squirrelmail.svn.sourceforge.net/viewvc/squirrelmail/trunk/squirrelmail/include/languages.php?revision=13765&view=markup
-	// OE ks_c_5601_1987 > cp949
-	fixed_charset = strings.Replace(fixed_charset, "ks-c-5601-1987", "cp949", -1)
-	// Moz x-euc-tw > euc-tw
-	fixed_charset = strings.Replace(fixed_charset, "x-euc", "euc", -1)
-	// Moz x-windows-949 > cp949
-	fixed_charset = strings.Replace(fixed_charset, "x-windows_", "cp", -1)
-	// windows-125x and cp125x charsets
-	fixed_charset = strings.Replace(fixed_charset, "windows-", "cp", -1)
-	// ibm > cp
-	fixed_charset = strings.Replace(fixed_charset, "ibm", "cp", -1)
-	// iso-8859-8-i -> iso-8859-8
-	fixed_charset = strings.Replace(fixed_charset, "iso-8859-8-i", "iso-8859-8", -1)
-	if charset != fixed_charset {
-		return fixed_charset
-	}
-	return charset
-}
-
-func md5hex(str string) string {
-	h := md5.New()
-	h.Write([]byte(str))
-	sum := h.Sum([]byte{})
-	return hex.EncodeToString(sum)
 }
 
 // If running Nginx as a proxy, give Nginx the IP address and port for the SMTP server
