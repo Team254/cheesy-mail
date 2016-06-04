@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -e
+
+USER=team254
+HOST=ec2.team254.com
+APP=cheesy-mail
+
+echo "Deploying $APP from Git master branch..."
+echo
+ssh $USER@$HOST "cd /opt/sites/$APP && git checkout -f && git pull && go build && pkill cheesy-mail; nohup ./cheesy-mail &"
+echo
+echo "Deployed $APP."
