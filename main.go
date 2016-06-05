@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -15,11 +16,14 @@ import (
 	"net/mail"
 	"os"
 	"strings"
+	"text/template"
+	"time"
 )
 
 const (
-	fromAddress  = "listadmin@team254.com"
-	adminAddress = "patfair+team254admin@gmail.com" // TODO(pat): update
+	fromAddress           = "listadmin@team254.com"
+	adminAddress          = "patfair+team254admin@gmail.com" // TODO(pat): update
+	waitBetweenMessagesMs = 75
 )
 
 var awsSession *session.Session
@@ -39,15 +43,26 @@ func isDebug(message *MailMessage) bool {
 	return strings.Contains(message.subject, "DEBUG")
 }
 
-func createEmail(message *MailMessage, recipient string, allRecipients []string) *ses.SendEmailInput {
-	body := message.body.HTML
-	if isDebug(message) {
-		// Append the list of recipients to the message.
-		body += "<p><b>Debugging information</b></p><p>Recipients:<br />" +
-			strings.Join(allRecipients, "<br />") + "</p>"
+func createEmail(message *MailMessage, recipient string, allRecipients []string) (*ses.SendEmailInput, error) {
+	location, _ := time.LoadLocation("America/Los_Angeles")
+	sendTime := time.Now().In(location)
+	data := struct {
+		Body          string
+		IsDebug       bool
+		AllRecipients []string
+		Date          string
+	}{message.body.HTML, isDebug(message), allRecipients, sendTime.Format("January 2, 2006")}
+	template, err := template.ParseFiles("message.html")
+	if err != nil {
+		return nil, err
+	}
+	var buffer bytes.Buffer
+	err = template.Execute(&buffer, data)
+	if err != nil {
+		return nil, err
 	}
 
-	email := &ses.SendEmailInput{
+	return &ses.SendEmailInput{
 		Source: aws.String(fmt.Sprintf("%s <%s>", message.from.Name, fromAddress)),
 		Destination: &ses.Destination{
 			ToAddresses: []*string{aws.String(recipient)},
@@ -59,13 +74,11 @@ func createEmail(message *MailMessage, recipient string, allRecipients []string)
 			},
 			Body: &ses.Body{
 				Html: &ses.Content{
-					Data: aws.String(body),
+					Data: aws.String(buffer.String()),
 				},
 			},
 		},
-	}
-
-	return email
+	}, nil
 }
 
 // Creates a message containing the error to send to the original message author (and CC the admin).
@@ -91,7 +104,6 @@ func createErrorEmail(message *MailMessage, err error, numSent int, numTotal int
 }
 
 func handleMessage(message *MailMessage) {
-	log.Println()
 	log.Println("Message received:")
 	log.Printf("From: %v", message.from)
 	log.Printf("To: %v", message.to)
@@ -119,8 +131,10 @@ func handleMessage(message *MailMessage) {
 		actualRecipients = allRecipients
 	}
 	for index, recipient := range actualRecipients {
-		email := createEmail(message, recipient, allRecipients)
-		_, err := service.SendEmail(email)
+		email, err := createEmail(message, recipient, allRecipients)
+		if err == nil {
+			_, err = service.SendEmail(email)
+		}
 		if err != nil {
 			log.Printf("Error sending message to %s: %v", recipient, err)
 			email := createErrorEmail(message, err, index, len(actualRecipients))
@@ -130,6 +144,9 @@ func handleMessage(message *MailMessage) {
 			}
 			break
 		}
+
+		// Sleep between sending messages to avoid exceeding the SES rate limit.
+		time.Sleep(time.Millisecond * waitBetweenMessagesMs)
 	}
 }
 
