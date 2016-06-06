@@ -82,7 +82,22 @@ func createEmail(message *MailMessage, recipient string, allRecipients []string)
 }
 
 // Creates a message containing the error to send to the original message author (and CC the admin).
-func createErrorEmail(message *MailMessage, err error, numSent int, numTotal int) *ses.SendEmailInput {
+func createErrorEmail(message *MailMessage, err error, numSent int, numTotal int) (*ses.SendEmailInput, error) {
+	data := struct {
+		ErrorMessage string
+		NumSent      int
+		NumTotal     int
+	}{err.Error(), numSent, numTotal}
+	template, err := template.ParseFiles("error_message.html")
+	if err != nil {
+		return nil, err
+	}
+	var buffer bytes.Buffer
+	err = template.Execute(&buffer, data)
+	if err != nil {
+		return nil, err
+	}
+
 	return &ses.SendEmailInput{
 		Source: aws.String(fmt.Sprintf("%s <%s>", "Mailing List Admin", "listadmin@team254.com")),
 		Destination: &ses.Destination{
@@ -95,12 +110,11 @@ func createErrorEmail(message *MailMessage, err error, numSent int, numTotal int
 			},
 			Body: &ses.Body{
 				Html: &ses.Content{
-					Data: aws.String(fmt.Sprintf("There was an error sending your message:<br /><br />%v"+
-						"<br /><br />Message sent successfully to %d of %d recipients.", err, numSent, numTotal)),
+					Data: aws.String(buffer.String()),
 				},
 			},
 		},
-	}
+	}, nil
 }
 
 func handleMessage(message *MailMessage) {
@@ -109,17 +123,36 @@ func handleMessage(message *MailMessage) {
 	log.Printf("To: %v", message.to)
 	log.Printf("Subject: %s", message.subject)
 	log.Printf("Body: %s", message.body.HTML)
+	log.Printf("Attachment count: %d", len(message.body.Attachments))
+	log.Printf("Inline count: %d", len(message.body.Inlines))
 
 	service := ses.New(awsSession)
 
 	allRecipients, err := getRecipients(message.to)
 	if err != nil {
 		log.Printf("Error getting recipients: %v", err)
-		email := createErrorEmail(message, err, 0, len(allRecipients))
-		_, err := service.SendEmail(email)
+		email, err := createErrorEmail(message, err, 0, len(allRecipients))
+		if err == nil {
+			_, err = service.SendEmail(email)
+		}
 		if err != nil {
 			log.Printf("Error sending error notification to %s: %v", message.from.Address, err)
 		}
+		return
+	}
+
+	// Reject any messages that contain attachments.
+	if len(message.body.Attachments) > 0 || len(message.body.Inlines) > 0 {
+		log.Println("Message contains attachments or inline images; rejecting.")
+		err = fmt.Errorf("Attachments and inline images are not supported. Please use links instead.")
+		email, err := createErrorEmail(message, err, 0, len(allRecipients))
+		if err == nil {
+			_, err = service.SendEmail(email)
+		}
+		if err != nil {
+			log.Printf("Error sending error notification to %s: %v", message.from.Address, err)
+		}
+		return
 	}
 
 	log.Printf("Redistributing message to %d recipients: %v", len(allRecipients), allRecipients)
@@ -137,8 +170,10 @@ func handleMessage(message *MailMessage) {
 		}
 		if err != nil {
 			log.Printf("Error sending message to %s: %v", recipient, err)
-			email := createErrorEmail(message, err, index, len(actualRecipients))
-			_, err := service.SendEmail(email)
+			email, err := createErrorEmail(message, err, index, len(actualRecipients))
+			if err == nil {
+				_, err = service.SendEmail(email)
+			}
 			if err != nil {
 				log.Printf("Error sending error notification to %s: %v", message.from.Address, err)
 			}
