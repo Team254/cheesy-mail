@@ -20,21 +20,18 @@ import (
 	"time"
 )
 
-const (
-	fromAddress           = "listadmin@team254.com"
-	adminAddress          = "patfair+team254admin@gmail.com" // TODO(pat): update
-	waitBetweenMessagesMs = 75
-)
-
 var awsSession *session.Session
+var config *Config
 
 // Returns the list of all addresses to distribute the message to, given the list addresses the original
 // message was sent to.
 func getRecipients(lists []*mail.Address) ([]string, error) {
+	// TODO(pat): Implement retrieving the list from the API or database.
 	return []string{"patfair+listtest@gmail.com"}, nil
 }
 
 func getSubject(message *MailMessage) string {
+	// TODO(pat): Use different prefixes depending on which group the message is for.
 	return "[Team 254] " + message.subject
 }
 
@@ -63,7 +60,7 @@ func createEmail(message *MailMessage, recipient string, allRecipients []string)
 	}
 
 	return &ses.SendEmailInput{
-		Source: aws.String(fmt.Sprintf("%s <%s>", message.from.Name, fromAddress)),
+		Source: aws.String(fmt.Sprintf("%s <%s>", message.from.Name, config.GetString("from_address"))),
 		Destination: &ses.Destination{
 			ToAddresses: []*string{aws.String(recipient)},
 		},
@@ -102,7 +99,7 @@ func createErrorEmail(message *MailMessage, err error, numSent int, numTotal int
 		Source: aws.String(fmt.Sprintf("%s <%s>", "Mailing List Admin", "listadmin@team254.com")),
 		Destination: &ses.Destination{
 			ToAddresses: []*string{aws.String(message.from.Address)},
-			CcAddresses: []*string{aws.String(adminAddress)},
+			CcAddresses: []*string{aws.String(config.GetString("admin_address"))},
 		},
 		Message: &ses.Message{
 			Subject: &ses.Content{
@@ -128,6 +125,7 @@ func handleMessage(message *MailMessage) {
 
 	service := ses.New(awsSession)
 
+	// TODO(pat): Check whether the sender is authorized.
 	allRecipients, err := getRecipients(message.to)
 	if err != nil {
 		log.Printf("Error getting recipients: %v", err)
@@ -181,7 +179,7 @@ func handleMessage(message *MailMessage) {
 		}
 
 		// Sleep between sending messages to avoid exceeding the SES rate limit.
-		time.Sleep(time.Millisecond * waitBetweenMessagesMs)
+		time.Sleep(time.Millisecond * time.Duration(config.GetInt("send_interval_ms")))
 	}
 }
 
@@ -192,13 +190,23 @@ func main() {
 	}
 	log.SetOutput(logfile)
 
+	config, err = ReadConfig()
+	if err != nil {
+		log.Fatalf("Error reading configs: %v", err)
+	}
+	fmt.Println(config.GetInt("smtp_port"))
+	fmt.Println(config.GetString("aws_access_key_id"))
+	fmt.Println(config.GetString("aws_secret_access_key"))
+
 	configure()
 	go runSmtpServer()
 	log.Println("Listening for incoming mail.")
 
 	// Configure AWS client session.
-	config := aws.Config{Region: aws.String("us-west-2"), Credentials: credentials.NewStaticCredentials("AKIAI2B2ROJNJAWY4VUQ", "xbTDTgoRsbn5Ef0PtjW3xnsr8lXEMmdrKIMmELC3", "")}
-	awsSession = session.New(&config)
+	awsConfig := aws.Config{Region: aws.String(config.GetString("aws_region")),
+		Credentials: credentials.NewStaticCredentials(config.GetString("aws_access_key_id"),
+			config.GetString("aws_secret_access_key"), "")}
+	awsSession = session.New(&awsConfig)
 
 	for {
 		message := <-messageReceivedChan

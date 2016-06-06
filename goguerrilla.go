@@ -68,18 +68,13 @@ var messageReceivedChan chan *MailMessage // Channel for sending received messag
 
 // Configurable values.
 var gConfig = map[string]string{
-	"GSMTP_MAX_SIZE":         "15728640",
-	"GSMTP_HOST_NAME":        "lists.team254.com", // This should also be set to reflect your RDNS
-	"GSMTP_VERBOSE":          "N",
-	"GSMTP_TIMEOUT":          "100", // how many seconds before timeout.
-	"GSTMP_LISTEN_INTERFACE": "0.0.0.0:8025",
-	"GM_ALLOWED_HOSTS":       "lists.team254.com",
-	"GM_PRIMARY_MAIL_HOST":   "lists.team254.com",
-	"GM_MAX_CLIENTS":         "500",
-	"NGINX_AUTH_ENABLED":     "Y",              // Y or N
-	"NGINX_AUTH":             "127.0.0.1:8026", // If using Nginx proxy, ip and port to serve Auth requsts
-	"SGID":                   "1008",           // group id
-	"SUID":                   "1008",           // user id, from /etc/passwd
+	"GSMTP_MAX_SIZE":       "15728640",
+	"GSMTP_HOST_NAME":      "lists.team254.com", // This should also be set to reflect your RDNS
+	"GSMTP_VERBOSE":        "N",
+	"GSMTP_TIMEOUT":        "100", // how many seconds before timeout.
+	"GM_ALLOWED_HOSTS":     "lists.team254.com",
+	"GM_PRIMARY_MAIL_HOST": "lists.team254.com",
+	"GM_MAX_CLIENTS":       "500",
 }
 
 func logln(level int, s string) {
@@ -127,15 +122,15 @@ func configure() {
 }
 
 func runSmtpServer() {
-	if gConfig["NGINX_AUTH_ENABLED"] == "Y" {
-		go nginxHTTPAuth()
-	}
+	go nginxHTTPAuth()
+
 	// Start listening for SMTP connections
-	listener, err := net.Listen("tcp", gConfig["GSTMP_LISTEN_INTERFACE"])
+	listenAddress := fmt.Sprintf("0.0.0.0:%d", config.GetInt("smtp_port"))
+	listener, err := net.Listen("tcp", listenAddress)
 	if err != nil {
 		logln(2, fmt.Sprintf("Cannot listen on port, %v", err))
 	} else {
-		logln(1, fmt.Sprintf("Listening on tcp %s", gConfig["GSTMP_LISTEN_INTERFACE"]))
+		logln(1, fmt.Sprintf("Listening on tcp %s", fmt.Sprintf("0.0.0.0:%d", config.GetInt("smtp_port"))))
 	}
 	var clientId int64
 	clientId = 1
@@ -343,17 +338,9 @@ func processMail(client *Client) (success bool) {
 	return true
 }
 
-// If running Nginx as a proxy, give Nginx the IP address and port for the SMTP server
-// Primary use of Nginx is to terminate TLS so that Go doesn't need to deal with it.
-// This could perform auth and load balancing too
-// See http://wiki.nginx.org/MailCoreModule
 func nginxHTTPAuth() {
-	parts := strings.Split(gConfig["GSTMP_LISTEN_INTERFACE"], ":")
-	gConfig["HTTP_AUTH_HOST"] = parts[0]
-	gConfig["HTTP_AUTH_PORT"] = parts[1]
-	fmt.Println(parts)
 	http.HandleFunc("/", nginxHTTPAuthHandler)
-	err := http.ListenAndServe(gConfig["NGINX_AUTH"], nil)
+	err := http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", config.GetInt("http_port")), nil)
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
@@ -362,7 +349,7 @@ func nginxHTTPAuth() {
 
 func nginxHTTPAuthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Auth-Status", "OK")
-	w.Header().Add("Auth-Server", gConfig["HTTP_AUTH_HOST"])
-	w.Header().Add("Auth-Port", gConfig["HTTP_AUTH_PORT"])
+	w.Header().Add("Auth-Server", "0.0.0.0")
+	w.Header().Add("Auth-Port", strconv.Itoa(config.GetInt("smtp_port")))
 	fmt.Fprint(w, "")
 }

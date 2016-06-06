@@ -1,0 +1,18 @@
+{
+  "global": {
+    "smtp_port": 8025,
+    "http_port": 8026,
+    "send_interval_ms": 75,
+    "aws_region": "us-west-2",
+    "from_address": "listadmin@team254.com",
+    "admin_address": "patfair+team254admin@gmail.com"
+  },
+  "dev": {
+    "aws_access_key_id": "",
+    "aws_secret_access_key": ""
+  },
+  "prod": {
+    "aws_access_key_id": "AKIAI2B2ROJNJAWY4VUQ",
+    "aws_secret_access_key": "Encrypted:pGJDanRcIXo+HdCU7I2+mj+CpjuE4A+8/B8b5VwMhc2+hR1fLzuvGSfZ530u\njGWv\n"
+  }
+}
