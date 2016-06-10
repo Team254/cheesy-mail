@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io/ioutil"
 	"log"
 	"os"
@@ -38,27 +39,11 @@ func (config *Config) GetInt(key string) int {
 func (config *Config) GetString(key string) string {
 	value := config.getRawParam(key).(string)
 	if strings.HasPrefix(value, "Encrypted:") {
-		// Decrypt the value before returning it.
-		data, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(value, "Encrypted:"))
+		decrypted, err := Decrypt(strings.TrimPrefix(value, "Encrypted:"))
 		if err != nil {
-			log.Fatalf("Error base64 decoding value for config key '%s': %v", key, err)
+			log.Fatalf("Error decrypting value for config key '%s': %v", key, err)
 		}
-		secret := os.Getenv("TEAM254_SECRET")
-		if secret == "" {
-			log.Fatalf("Error: TEAM254_SECRET environment variable not set.")
-		}
-		secretDigest := sha256.Sum256([]byte(secret))
-		block, err := aes.NewCipher(secretDigest[:])
-		if err != nil {
-			log.Fatalf("Error: %v")
-		}
-		iv := make([]byte, aes.BlockSize)
-		mode := cipher.NewCBCDecrypter(block, iv)
-		mode.CryptBlocks(data, data)
-
-		// Remove any PKCS#7 padding.
-		paddingSize := int(data[len(data)-1])
-		return string(data[:len(data)-paddingSize])
+		return decrypted
 	} else {
 		return value
 	}
@@ -89,4 +74,27 @@ func (config *Config) getRawParam(key string) interface{} {
 
 	log.Fatalf("Error: No value found for config key '%s'.", key)
 	return nil
+}
+
+// Returns the plaintext for the given string encrypted with the Team 254 secret.
+func Decrypt(encrypted string) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(encrypted)
+	if err != nil {
+		return "", err
+	}
+	secret := os.Getenv("TEAM254_SECRET")
+	if secret == "" {
+		return "", errors.New("TEAM254_SECRET environment variable not set.")
+	}
+	secretDigest := sha256.Sum256([]byte(secret))
+	block, err := aes.NewCipher(secretDigest[:])
+	if err != nil {
+		return "", err
+	}
+	iv := make([]byte, aes.BlockSize)
+	mode := cipher.NewCBCDecrypter(block, iv)
+	mode.CryptBlocks(data, data)
+	// Remove any PKCS#7 padding.
+	paddingSize := int(data[len(data)-1])
+	return string(data[:len(data)-paddingSize]), nil
 }

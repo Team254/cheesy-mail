@@ -13,26 +13,55 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ses"
 	"log"
-	"net/mail"
 	"os"
 	"strings"
 	"text/template"
 	"time"
 )
 
+const (
+	parentList  = "MAILINGLIST_PARENTS"
+	studentList = "MAILINGLIST_STUDENTS"
+)
+
 var awsSession *session.Session
 var config *Config
+var listMap = map[string]string{"parents@lists.team254.com": parentList,
+	"students@lists.team254.com": studentList}
 
 // Returns the list of all addresses to distribute the message to, given the list addresses the original
 // message was sent to.
-func getRecipients(lists []*mail.Address) ([]string, error) {
-	// TODO(pat): Implement retrieving the list from the API or database.
-	return []string{"patfair+listtest@gmail.com"}, nil
+func getRecipients(lists []string) ([]string, error) {
+	recipientSet := make(map[string]struct{}) // Simulates a set for deduplication
+
+	for _, list := range lists {
+		users, err := GetUsersByPermission(list + "_RECEIVE")
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("Recipients: %v", users) // TODO delete
+		for _, user := range users {
+			recipientSet[user.Email] = struct{}{}
+		}
+	}
+
+	var recipients []string
+	for recipient := range recipientSet {
+		recipients = append(recipients, recipient)
+	}
+	return recipients, nil
 }
 
-func getSubject(message *MailMessage) string {
-	// TODO(pat): Use different prefixes depending on which group the message is for.
-	return "[Team 254] " + message.subject
+func formatSubject(lists []string, subject string) string {
+	prefix := "[Team 254"
+	if len(lists) == 1 {
+		if lists[0] == parentList {
+			prefix += " Parents"
+		} else if lists[0] == studentList {
+			prefix += " Students"
+		}
+	}
+	return prefix + "] " + subject
 }
 
 // Returns true if the subject line contains "DEBUG".
@@ -40,7 +69,7 @@ func isDebug(message *MailMessage) bool {
 	return strings.Contains(message.subject, "DEBUG")
 }
 
-func createEmail(message *MailMessage, recipient string, allRecipients []string) (*ses.SendEmailInput, error) {
+func createEmail(message *MailMessage, lists []string, recipient string, allRecipients []string) (*ses.SendEmailInput, error) {
 	location, _ := time.LoadLocation("America/Los_Angeles")
 	sendTime := time.Now().In(location)
 	data := struct {
@@ -67,7 +96,7 @@ func createEmail(message *MailMessage, recipient string, allRecipients []string)
 		ReplyToAddresses: []*string{aws.String(message.from.Address)},
 		Message: &ses.Message{
 			Subject: &ses.Content{
-				Data: aws.String(getSubject(message)),
+				Data: aws.String(formatSubject(lists, message.subject)),
 			},
 			Body: &ses.Body{
 				Html: &ses.Content{
@@ -125,8 +154,47 @@ func handleMessage(message *MailMessage) {
 
 	service := ses.New(awsSession)
 
-	// TODO(pat): Check whether the sender is authorized.
-	allRecipients, err := getRecipients(message.to)
+	senderUser, err := GetUserByEmail(message.from.Address)
+	if err != nil {
+		log.Printf("Error looking up user: %v", err)
+		return
+	}
+
+	// Determine which mailing lists the message is addressed to, and whether the sender has permission.
+	var lists []string
+	for _, toEmail := range message.to {
+		if list, ok := listMap[toEmail.Address]; ok {
+			hasPermission := false
+			for _, permission := range senderUser.Permissions {
+				if permission == list+"_SEND" {
+					hasPermission = true
+					break
+				}
+			}
+			if !hasPermission {
+				err = fmt.Errorf("Sender '%s' does not have permission to mail list '%s'.",
+					message.from.Address, toEmail)
+				log.Printf("Error: %v", err)
+				email, err := createErrorEmail(message, err, 0, 0)
+				if err == nil {
+					_, err = service.SendEmail(email)
+				}
+				if err != nil {
+					log.Printf("Error sending error notification to %s: %v", message.from.Address, err)
+				}
+				return
+			}
+			lists = append(lists, list)
+		}
+	}
+
+	if len(lists) == 0 {
+		log.Printf("Message is not addressed to any known mailing lists; ignoring.")
+		return
+	}
+	log.Printf("Lists addressed to: %v", lists)
+
+	allRecipients, err := getRecipients(lists)
 	if err != nil {
 		log.Printf("Error getting recipients: %v", err)
 		email, err := createErrorEmail(message, err, 0, len(allRecipients))
@@ -162,7 +230,7 @@ func handleMessage(message *MailMessage) {
 		actualRecipients = allRecipients
 	}
 	for index, recipient := range actualRecipients {
-		email, err := createEmail(message, recipient, allRecipients)
+		email, err := createEmail(message, lists, recipient, allRecipients)
 		if err == nil {
 			_, err = service.SendEmail(email)
 		}
@@ -194,9 +262,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error reading configs: %v", err)
 	}
-	fmt.Println(config.GetInt("smtp_port"))
-	fmt.Println(config.GetString("aws_access_key_id"))
-	fmt.Println(config.GetString("aws_secret_access_key"))
 
 	configure()
 	go runSmtpServer()

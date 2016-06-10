@@ -35,8 +35,8 @@
 {{if .IsDebug}}
   <p><b>Debugging information</b></p>
   <p>Recipients:<br />
-    {{range .AllRecipients}}
-      {{.}}<br />
+    {{range $recipient := .AllRecipients}}
+      {{$recipient}}<br />
     {{end}}
   </p>
 {{end}}
