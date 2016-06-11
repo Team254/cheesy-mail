@@ -1,3 +1,8 @@
+// Copyright 2016 Team 254. All Rights Reserved.
+// Author: pat@patfairbank.com (Patrick Fairbank)
+//
+// Methods for reading environmment-specific configs from a JSON file.
+
 package main
 
 import (
@@ -17,6 +22,7 @@ type Config struct {
 	params map[string]map[string]interface{}
 }
 
+// Parses the configs from JSON and returns an object the values can be accessed from.
 func ReadConfig() (*Config, error) {
 	data, err := ioutil.ReadFile("config.json")
 	if err != nil {
@@ -32,10 +38,12 @@ func ReadConfig() (*Config, error) {
 	return &config, nil
 }
 
+// Returns the value for the given key, cast as an integer.
 func (config *Config) GetInt(key string) int {
 	return int(config.getRawParam(key).(float64))
 }
 
+// Returns the value for the given key, cast as a string.
 func (config *Config) GetString(key string) string {
 	value := config.getRawParam(key).(string)
 	if strings.HasPrefix(value, "Encrypted:") {

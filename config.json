@@ -1,5 +1,6 @@
 {
   "global": {
+    "host_name": "lists.team254.com",
     "smtp_port": 8025,
     "http_port": 8026,
     "send_interval_ms": 75,
