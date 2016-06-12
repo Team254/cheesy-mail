@@ -11,6 +11,13 @@
         <tr>
           <td width="475px" valign="top" style="font-size: 10pt!important;font-family: Century Gothic, sans-serif!important;line-height: 1.5em!important; color: #333;">
             {{.Body}}
+            {{if .Attachments}}
+              <br />
+              <b>Attachments:</b><br />
+              {{range $attachment := .Attachments}}
+                <a href="{{$.AttachmentBaseUrl}}/{{$attachment}}">{{$attachment}}</a><br />
+              {{end}}
+            {{end}}
           </td>
           <td width="100px" valign="top" style="font-size: 8pt!important;font-family: Century Gothic, sans-serif!important;line-height: 1.5em!important; color: #333; padding-left: 15px; text-align: right; padding-bottom: 10px;">
             <a href="http://team254.com" target=_blank><img src="http://media.team254.com/resources/graphics/swoosh-email.png" width="100px" style="margin-right:-5px"></a>

@@ -6,15 +6,18 @@
     "send_interval_ms": 75,
     "aws_region": "us-west-2",
     "from_address": "listadmin@team254.com",
-    "admin_address": "patfair+team254admin@gmail.com",
-    "members_api_url": "https://members.team254.com/api"
+    "admin_address": "listadmin@gmail.com",
+    "members_api_url": "https://members.team254.com/api",
+    "attachment_base_url": "https://media.ec2.team254.com/attachments"
   },
   "dev": {
     "aws_access_key_id": "",
-    "aws_secret_access_key": ""
+    "aws_secret_access_key": "",
+    "attachment_save_path": "./attachments"
   },
   "prod": {
     "aws_access_key_id": "AKIAI2B2ROJNJAWY4VUQ",
-    "aws_secret_access_key": "Encrypted:pGJDanRcIXo+HdCU7I2+mj+CpjuE4A+8/B8b5VwMhc2+hR1fLzuvGSfZ530u\njGWv\n"
+    "aws_secret_access_key": "Encrypted:pGJDanRcIXo+HdCU7I2+mj+CpjuE4A+8/B8b5VwMhc2+hR1fLzuvGSfZ530u\njGWv\n",
+    "attachment_save_path": "/opt/media/media.team254.com/attachments"
   }
 }

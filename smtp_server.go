@@ -59,14 +59,12 @@ func (server *SmtpServer) Run() {
 		}
 
 		// Handle each incoming request in a new goroutine.
-		log.Printf("New SMTP connection from %s", conn.RemoteAddr().String())
 		client := ClientSession{
-			server:  server,
-			state:   OPEN_STATE,
-			conn:    conn,
-			address: conn.RemoteAddr().String(),
-			bufin:   bufio.NewReader(conn),
-			bufout:  bufio.NewWriter(conn),
+			server: server,
+			state:  OPEN_STATE,
+			conn:   conn,
+			bufin:  bufio.NewReader(conn),
+			bufout: bufio.NewWriter(conn),
 		}
 		go client.HandleSession()
 	}

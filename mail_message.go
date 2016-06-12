@@ -11,8 +11,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ses"
 	"github.com/jhillyerd/go.enmime"
+	"github.com/nu7hatch/gouuid"
+	"io/ioutil"
 	"log"
 	"net/mail"
+	"os"
+	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 	"time"
@@ -33,6 +38,9 @@ type MailMessage struct {
 	body          *enmime.MIMEBody
 	lists         []string
 	allRecipients []string
+	attachmentDir string
+	attachments   []string
+	inlines       []string
 }
 
 // Processes the incoming message and redistributes it to the appropriate recipients.
@@ -68,10 +76,9 @@ func (message *MailMessage) Handle() {
 		return
 	}
 
-	// Reject any messages that contain attachments.
-	if len(message.body.Attachments) > 0 || len(message.body.Inlines) > 0 {
-		log.Println("Message contains attachments or inline images; rejecting.")
-		err = fmt.Errorf("Attachments and inline images are not supported. Please use links instead.")
+	err = message.saveAttachments()
+	if err != nil {
+		err = fmt.Errorf("Error saving attachments: %v", err)
 		message.handleError(err, 0)
 		return
 	}
@@ -129,16 +136,16 @@ func (message *MailMessage) getRecipients() ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("Recipients: %v", users) // TODO delete
 		for _, user := range users {
 			recipientSet[user.Email] = struct{}{}
 		}
 	}
 
-	var recipients []string
+	var recipients sort.StringSlice
 	for recipient := range recipientSet {
 		recipients = append(recipients, recipient)
 	}
+	recipients.Sort()
 	return recipients, nil
 }
 
@@ -160,16 +167,66 @@ func (message *MailMessage) isDebug() bool {
 	return strings.Contains(message.subject, "DEBUG")
 }
 
+// Saves attachments to a local directory that is served via HTTP.
+func (message *MailMessage) saveAttachments() error {
+	if len(message.body.Attachments) == 0 && len(message.body.Inlines) == 0 {
+		return nil
+	}
+
+	messageId, _ := uuid.NewV4()
+	message.attachmentDir = messageId.String()
+	basePath := fmt.Sprintf("%s/%s", config.GetString("attachment_save_path"), message.attachmentDir)
+	err := os.MkdirAll(basePath, 0755)
+	if err != nil {
+		return err
+	}
+
+	for _, attachment := range message.body.Attachments {
+		filePath := fmt.Sprintf("%s/%s", basePath, attachment.FileName())
+		err = ioutil.WriteFile(filePath, attachment.Content(), 0644)
+		if err != nil {
+			return err
+		}
+		message.attachments = append(message.attachments, attachment.FileName())
+	}
+
+	for _, inline := range message.body.Inlines {
+		filePath := fmt.Sprintf("%s/%s", basePath, inline.FileName())
+		err = ioutil.WriteFile(filePath, inline.Content(), 0644)
+		if err != nil {
+			return err
+		}
+		message.inlines = append(message.inlines, inline.FileName())
+
+		// Rewrite the image tag in the HTML body to link to the inline image.
+		cid := inline.Header().Get("X-Attachment-Id")
+		inlineImageUrl := fmt.Sprintf("%s/%s/%s", config.GetString("attachment_base_url"),
+			message.attachmentDir, inline.FileName())
+		imageRe, _ := regexp.Compile(fmt.Sprintf("<img src=[\"'](cid:%s)[\"']", cid))
+		matches := imageRe.FindStringSubmatch(message.body.HTML)
+		if matches == nil {
+			return fmt.Errorf("Could not find content ID '%s' in message body.", cid)
+		}
+		message.body.HTML = strings.Replace(message.body.HTML, matches[1], inlineImageUrl, -1)
+	}
+
+	return nil
+}
+
 // Sends the reformatted original message on to the given recipient.
 func (message *MailMessage) forwardEmail(recipient string) error {
 	location, _ := time.LoadLocation("America/Los_Angeles")
 	sendTime := time.Now().In(location)
+	attachmentBaseUrl := fmt.Sprintf("%s/%s", config.GetString("attachment_base_url"), message.attachmentDir)
 	data := struct {
-		Body          string
-		IsDebug       bool
-		AllRecipients []string
-		Date          string
-	}{message.body.HTML, message.isDebug(), message.allRecipients, sendTime.Format("January 2, 2006")}
+		Body              string
+		IsDebug           bool
+		AllRecipients     []string
+		Date              string
+		AttachmentBaseUrl string
+		Attachments       []string
+	}{message.body.HTML, message.isDebug(), message.allRecipients, sendTime.Format("January 2, 2006"),
+		attachmentBaseUrl, message.attachments}
 	template, err := template.ParseFiles("message.html")
 	if err != nil {
 		return err

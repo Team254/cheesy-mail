@@ -31,7 +31,6 @@ type ClientSession struct {
 	state      int
 	helo       string
 	response   string
-	address    string
 	data       string
 	conn       net.Conn
 	bufin      *bufio.Reader
@@ -75,13 +74,11 @@ func (client *ClientSession) HandleSession() {
 				if len(input) > 5 {
 					client.helo = input[5:]
 				}
-				client.setResponse("250-%s Hello %s [%s]\r\n250-SIZE %d\r\n250 HELP", client.server.hostName,
-					client.helo, client.address, maxMessageSizeBytes)
+				client.setResponse("250-%s Hello %s \r\n250-SIZE %d\r\n250 HELP", client.server.hostName,
+					client.helo, maxMessageSizeBytes)
 			case strings.Index(cmd, "MAIL FROM:") == 0:
 				client.setResponse("250 Ok")
 			case strings.Index(cmd, "XCLIENT") == 0:
-				client.address = input[13:]
-				client.address = client.address[0:strings.Index(client.address, " ")]
 				client.setResponse("250 OK")
 			case strings.Index(cmd, "RCPT TO:") == 0:
 				client.setResponse("250 Accepted")
