@@ -81,7 +81,14 @@ func (client *ClientSession) HandleSession() {
 			case strings.Index(cmd, "XCLIENT") == 0:
 				client.setResponse("250 OK")
 			case strings.Index(cmd, "RCPT TO:") == 0:
-				client.setResponse("250 Accepted")
+				// Reject any messages outright not sent to the domain.
+				if strings.Contains(input, client.server.hostName) {
+					client.setResponse("250 Accepted")
+				} else {
+					log.Printf("Rejecting probable spam message sent to %s", input[8:])
+					client.setResponse("450 Rejected")
+					client.kill()
+				}
 			case strings.Index(cmd, "NOOP") == 0:
 				client.setResponse("250 OK")
 			case strings.Index(cmd, "RSET") == 0:
