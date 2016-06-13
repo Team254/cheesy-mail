@@ -8,7 +8,7 @@
     "from_address": "listadmin@team254.com",
     "admin_address": "listadmin@gmail.com",
     "members_api_url": "https://members.team254.com/api",
-    "attachment_base_url": "https://media.ec2.team254.com/attachments"
+    "attachment_base_url": "https://media.team254.com/attachments"
   },
   "dev": {
     "aws_access_key_id": "",
