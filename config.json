@@ -16,8 +16,8 @@
     "attachment_save_path": "./attachments"
   },
   "prod": {
-    "aws_access_key_id": "AKIAI2B2ROJNJAWY4VUQ",
-    "aws_secret_access_key": "Encrypted:pGJDanRcIXo+HdCU7I2+mj+CpjuE4A+8/B8b5VwMhc2+hR1fLzuvGSfZ530u\njGWv\n",
+    "aws_access_key_id": "AKIAJPRXRJ26RG3WZZJA",
+    "aws_secret_access_key": "Encrypted:Sy59kHeCOggpSChA66/Fi1rpkVRmPSPtmUVZcwHUdT6Ixg5/6XhRjhXW+NfY\nUok9\n",
     "attachment_save_path": "/opt/media/media.team254.com/attachments"
   }
 }
