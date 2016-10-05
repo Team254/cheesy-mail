@@ -7,6 +7,6 @@ APP=cheesy-mail
 
 echo "Deploying $APP from Git master branch..."
 echo
-ssh $USER@$HOST "export GOPATH=/home/$USER/go && cd /opt/sites/$APP && git checkout -f && git pull && go get -d && go build && (pkill cheesy-mail || true) && (nohup ./cheesy-mail > /dev/null &)"
+ssh $USER@$HOST "export GOPATH=/home/$USER/go && cd /opt/sites/$APP && git checkout -f && git pull && go get -d && go build && (pkill cheesy-mail || true) && (nohup ./cheesy-mail > cheesy-mail.out 2>&1 &)"
 echo
 echo "Deployed $APP."

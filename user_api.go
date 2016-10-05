@@ -42,6 +42,9 @@ func GetUserByEmail(email string) (*User, error) {
 		return nil, err
 	}
 
+	if len(users) == 0 {
+		return nil, fmt.Errorf("Sender %s is not a registered team254.com user.", email)
+	}
 	if len(users) != 1 {
 		return nil, fmt.Errorf("Expected 1 user for address %s; got %d", email, len(users))
 	}

@@ -28,8 +28,8 @@ const (
 	studentList = "MAILINGLIST_STUDENTS"
 )
 
-var listMap = map[string]string{"parents@lists.team254.com": parentList,
-	"students@lists.team254.com": studentList}
+var listMap = map[string]string{"parents@lists.team254.com": parentList, "parents@team254.com": parentList,
+	"students@lists.team254.com": studentList, "students@team254.com": studentList}
 
 type MailMessage struct {
 	from          *mail.Address
@@ -55,7 +55,7 @@ func (message *MailMessage) Handle() {
 
 	senderUser, err := GetUserByEmail(message.from.Address)
 	if err != nil {
-		log.Printf("Error looking up user: %v", err)
+		message.handleError(err, 0)
 		return
 	}
 
