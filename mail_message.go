@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ses"
@@ -69,6 +70,13 @@ func (message *MailMessage) Handle() {
 		return
 	}
 	log.Printf("Lists addressed to: %v", message.lists)
+
+	if message.body.HTML == "" {
+		err = errors.New("Rejected message with blank HTML body; can't process plain-text messages. " +
+			"Please re-send as HTML (try using a different client).")
+		message.handleError(err, 0)
+		return
+	}
 
 	message.allRecipients, err = message.getRecipients()
 	if err != nil {
