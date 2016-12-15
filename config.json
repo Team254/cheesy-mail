@@ -13,11 +13,13 @@
   "dev": {
     "aws_access_key_id": "",
     "aws_secret_access_key": "",
-    "attachment_save_path": "./attachments"
+    "attachment_save_path": "./attachments",
+    "blog_post_url": "http://www.team254.dev:8080/api/poof_post.php"
   },
   "prod": {
     "aws_access_key_id": "AKIAJPRXRJ26RG3WZZJA",
     "aws_secret_access_key": "Encrypted:Sy59kHeCOggpSChA66/Fi1rpkVRmPSPtmUVZcwHUdT6Ixg5/6XhRjhXW+NfY\nUok9\n",
-    "attachment_save_path": "/opt/media/media.team254.com/attachments"
+    "attachment_save_path": "/opt/media/media.team254.com/attachments",
+    "blog_post_url": "https://www.team254.com/api/poof_post.php"
   }
 }

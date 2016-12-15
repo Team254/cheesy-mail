@@ -7,6 +7,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
@@ -15,10 +17,12 @@ import (
 	"github.com/nu7hatch/gouuid"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"net/mail"
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -109,6 +113,13 @@ func (message *MailMessage) Handle() {
 
 		// Sleep between sending messages to avoid exceeding the SES rate limit.
 		time.Sleep(time.Millisecond * time.Duration(config.GetInt("send_interval_ms")))
+	}
+
+	err = message.postToBlog(senderUser)
+	if err != nil {
+		err = fmt.Errorf("Error posting message to blog after distributing to list: %v", err)
+		message.handleError(err, len(actualRecipients))
+		return
 	}
 }
 
@@ -265,6 +276,69 @@ func (message *MailMessage) forwardEmail(recipient string) error {
 
 	_, err = sesService.SendEmail(email)
 	return err
+}
+
+func (message *MailMessage) postToBlog(senderUser *User) error {
+	// Format the message as an HTML blog post.
+	attachmentBaseUrl := fmt.Sprintf("%s/%s", config.GetString("attachment_base_url"), message.attachmentDir)
+	data := struct {
+		Body              string
+		AttachmentBaseUrl string
+		Attachments       []string
+	}{message.body.HTML, attachmentBaseUrl, message.attachments}
+	template, err := template.ParseFiles("blog_post.html")
+	if err != nil {
+		return err
+	}
+	var buffer bytes.Buffer
+	err = template.Execute(&buffer, data)
+	if err != nil {
+		return err
+	}
+	body := buffer.String()
+
+	// Determine which lists the message was sent to, so that it can be posted in the appropriate category.
+	sentToStudents := "0"
+	sentToParents := "0"
+	for _, list := range message.lists {
+		if list == studentList {
+			sentToStudents = "1"
+		} else if list == parentList {
+			sentToParents = "1"
+		}
+	}
+
+	url := config.GetString("blog_post_url")
+	client := &http.Client{}
+	req, err := http.NewRequest("POST", url, bytes.NewBufferString(body))
+	if err != nil {
+		return err
+	}
+
+	// Populate post metadata.
+	location, _ := time.LoadLocation("America/Los_Angeles")
+	sendTime := time.Now().In(location)
+	dateString := sendTime.Format("Mon, 2 Jan 2006 15:04:05 MST")
+	req.Header.Set("Date", dateString)
+	req.Header.Set("User-Agent", "cheesy-mail")
+	authDigest := md5.Sum([]byte(dateString + message.subject + body + os.Getenv("TEAM254_SECRET")))
+	req.Header.Set("Authorization", hex.EncodeToString(authDigest[:]))
+	req.Header.Set("Poof-Title", message.subject)
+	req.Header.Set("Poof-User", strconv.Itoa(senderUser.Id))
+	req.Header.Set("Poof-Students", sentToStudents)
+	req.Header.Set("Poof-Parents", sentToParents)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != 200 {
+		defer resp.Body.Close()
+		body, _ := ioutil.ReadAll(resp.Body)
+		log.Printf("Error posting blog: %s", string(body))
+		return fmt.Errorf("Post failed: status code %d for URL %s", resp.StatusCode, url)
+	}
+	return nil
 }
 
 // Sends a message containing the error to the original message author (and CCs the admin).
