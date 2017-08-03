@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ses"
 	"github.com/jhillyerd/go.enmime"
 	"github.com/nu7hatch/gouuid"
@@ -257,11 +258,10 @@ func (message *MailMessage) forwardEmail(recipient string) error {
 	}
 
 	email := &ses.SendEmailInput{
-		Source: aws.String(fmt.Sprintf("%s <%s>", message.from.Name, config.GetString("from_address"))),
+		Source: aws.String(fmt.Sprintf("%s <%s>", message.from.Name, message.from.Address)),
 		Destination: &ses.Destination{
 			ToAddresses: []*string{aws.String(recipient)},
 		},
-		ReplyToAddresses: []*string{aws.String(message.from.Address)},
 		Message: &ses.Message{
 			Subject: &ses.Content{
 				Data: aws.String(message.getFormattedSubject()),
@@ -275,6 +275,18 @@ func (message *MailMessage) forwardEmail(recipient string) error {
 	}
 
 	_, err = sesService.SendEmail(email)
+	if err != nil {
+		// Catch the unverified sender case and automatically send a verification request.
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == ses.ErrCodeMessageRejected && strings.Contains(aerr.Message(), "not verified") {
+				message.verifySender()
+
+				// Rewrite error to be more helpful.
+				err = fmt.Errorf("Sender email address %s is not yet verified. Wait for verification "+
+					"email, follow instructions, then retry sending message to list.", message.from.Address)
+			}
+		}
+	}
 	return err
 }
 
@@ -361,7 +373,7 @@ func (message *MailMessage) handleError(err error, numSent int) {
 	}
 
 	email := &ses.SendEmailInput{
-		Source: aws.String(fmt.Sprintf("%s <%s>", "Mailing List Admin", "listadmin@team254.com")),
+		Source: aws.String(fmt.Sprintf("%s <%s>", "Mailing List Admin", config.GetString("admin_address"))),
 		Destination: &ses.Destination{
 			ToAddresses: []*string{aws.String(message.from.Address)},
 			CcAddresses: []*string{aws.String(config.GetString("admin_address"))},
@@ -381,5 +393,14 @@ func (message *MailMessage) handleError(err error, numSent int) {
 	_, err = sesService.SendEmail(email)
 	if err != nil {
 		log.Printf("Error sending error notification to %s: %v", message.from.Address, err)
+	}
+}
+
+// Sends a verification request to the attempted sender in order to register them with SES.
+func (message *MailMessage) verifySender() {
+	request := &ses.VerifyEmailIdentityInput{EmailAddress: aws.String(message.from.Address)}
+	_, err := sesService.VerifyEmailIdentity(request)
+	if err != nil {
+		log.Printf("Error sending verification request for %s: %v", message.from.Address, err)
 	}
 }
