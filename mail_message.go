@@ -35,7 +35,9 @@ const (
 )
 
 var listMap = map[string]string{"parents@lists.team254.com": parentList, "parents@team254.com": parentList,
-	"students@lists.team254.com": studentList, "students@team254.com": studentList}
+	"students@lists.team254.com": studentList, "students@team254.com": studentList,
+	"Parents@lists.team254.com": parentList, "Parents@team254.com": parentList,
+	"Students@lists.team254.com": studentList, "Students@team254.com": studentList}
 
 type MailMessage struct {
 	from          *mail.Address
