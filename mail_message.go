@@ -118,11 +118,13 @@ func (message *MailMessage) Handle() {
 		time.Sleep(time.Millisecond * time.Duration(config.GetInt("send_interval_ms")))
 	}
 
-	err = message.postToBlog(senderUser)
-	if err != nil {
-		err = fmt.Errorf("Error posting message to blog after distributing to list: %v", err)
-		message.handleError(err, len(actualRecipients))
-		return
+	if !message.isDebug() {
+		err = message.postToBlog(senderUser)
+		if err != nil {
+			err = fmt.Errorf("Error posting message to blog after distributing to list: %v", err)
+			message.handleError(err, len(actualRecipients))
+			return
+		}
 	}
 }
 
