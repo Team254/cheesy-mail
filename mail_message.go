@@ -35,9 +35,7 @@ const (
 )
 
 var listMap = map[string]string{"parents@lists.team254.com": parentList, "parents@team254.com": parentList,
-	"students@lists.team254.com": studentList, "students@team254.com": studentList,
-	"Parents@lists.team254.com": parentList, "Parents@team254.com": parentList,
-	"Students@lists.team254.com": studentList, "Students@team254.com": studentList}
+	"students@lists.team254.com": studentList, "students@team254.com": studentList}
 
 type MailMessage struct {
 	from          *mail.Address
@@ -132,7 +130,7 @@ func (message *MailMessage) Handle() {
 func (message *MailMessage) getListsAndCheckPermission(senderUser *User) ([]string, error) {
 	var lists []string
 	for _, toEmail := range message.to {
-		if list, ok := listMap[toEmail.Address]; ok {
+		if list, ok := listMap[strings.ToLower(toEmail.Address)]; ok {
 			hasPermission := false
 			for _, permission := range senderUser.Permissions {
 				if permission == list+"_SEND" {
@@ -262,7 +260,7 @@ func (message *MailMessage) forwardEmail(recipient string) error {
 	}
 
 	email := &ses.SendEmailInput{
-		Source: aws.String(fmt.Sprintf("%s <%s>", message.from.Name, message.from.Address)),
+		Source: aws.String(fmt.Sprintf("%s <%s>", message.from.Name, strings.ToLower(message.from.Address))),
 		Destination: &ses.Destination{
 			ToAddresses: []*string{aws.String(recipient)},
 		},
@@ -402,7 +400,7 @@ func (message *MailMessage) handleError(err error, numSent int) {
 
 // Sends a verification request to the attempted sender in order to register them with SES.
 func (message *MailMessage) verifySender() {
-	request := &ses.VerifyEmailIdentityInput{EmailAddress: aws.String(message.from.Address)}
+	request := &ses.VerifyEmailIdentityInput{EmailAddress: aws.String(strings.ToLower(message.from.Address))}
 	_, err := sesService.VerifyEmailIdentity(request)
 	if err != nil {
 		log.Printf("Error sending verification request for %s: %v", message.from.Address, err)
