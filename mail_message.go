@@ -8,6 +8,7 @@ package main
 import (
 	"bytes"
 	"crypto/md5"
+	"encoding/base32"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -35,6 +36,7 @@ const (
 
 var listMap = map[string]string{"parents@lists.team254.com": parentList, "parents@team254.com": parentList,
 	"students@lists.team254.com": studentList, "students@team254.com": studentList}
+var base32Codec = base32.StdEncoding.WithPadding(base32.NoPadding)
 
 type MailMessage struct {
 	from          *mail.Address
@@ -57,6 +59,10 @@ func (message *MailMessage) Handle() {
 	log.Printf("Body: %s", message.body.HTML)
 	log.Printf("Attachment count: %d", len(message.body.Attachments))
 	log.Printf("Inline count: %d", len(message.body.Inlines))
+
+	if message.handleReplyForwarding() {
+		return
+	}
 
 	senderUser, err := GetUserByEmail(message.from.Address)
 	if err != nil {
@@ -104,7 +110,7 @@ func (message *MailMessage) Handle() {
 		actualRecipients = message.allRecipients
 	}
 	for index, recipient := range actualRecipients {
-		err = message.forwardEmail(senderUser, recipient)
+		err = message.forwardEmail(recipient)
 		if err != nil {
 			err = fmt.Errorf("Error sending message to %s: %v", recipient, err)
 			message.handleError(err, index)
@@ -223,7 +229,7 @@ func (message *MailMessage) saveAttachments() error {
 		cid := inline.Header().Get("X-Attachment-Id")
 		inlineImageUrl := fmt.Sprintf("%s/%s/%s", config.GetString("attachment_base_url"),
 			message.attachmentDir, inline.FileName())
-		imageRe, _ := regexp.Compile(fmt.Sprintf("<img src=[\"'](cid:%s)[\"']", cid))
+		imageRe := regexp.MustCompile(fmt.Sprintf("<img src=[\"'](cid:%s)[\"']", cid))
 		matches := imageRe.FindStringSubmatch(message.body.HTML)
 		if matches == nil {
 			return fmt.Errorf("Could not find content ID '%s' in message body.", cid)
@@ -235,7 +241,7 @@ func (message *MailMessage) saveAttachments() error {
 }
 
 // Sends the reformatted original message on to the given recipient.
-func (message *MailMessage) forwardEmail(senderUser *User, recipient string) error {
+func (message *MailMessage) forwardEmail(recipient string) error {
 	location, _ := time.LoadLocation("America/Los_Angeles")
 	sendTime := time.Now().In(location)
 	attachmentBaseUrl := fmt.Sprintf("%s/%s", config.GetString("attachment_base_url"), message.attachmentDir)
@@ -258,8 +264,10 @@ func (message *MailMessage) forwardEmail(senderUser *User, recipient string) err
 		return err
 	}
 
+	encodedFromAddress := strings.ToLower(base32Codec.EncodeToString([]byte(message.from.Address)))
 	email := &ses.SendEmailInput{
-		Source: aws.String(fmt.Sprintf("%s <%d@%s>", message.from.Name, senderUser.Id, config.GetString("host_name"))),
+		Source: aws.String(fmt.Sprintf("%s <r-%s@%s>", message.from.Name, encodedFromAddress,
+			config.GetString("host_name"))),
 		Destination: &ses.Destination{
 			ToAddresses: []*string{aws.String(recipient)},
 		},
@@ -383,4 +391,69 @@ func (message *MailMessage) handleError(err error, numSent int) {
 	if err != nil {
 		log.Printf("Error sending error notification to %s: %v", message.from.Address, err)
 	}
+}
+
+// Forwards replies sent to r:[encoded reply address]@[list domain] to the appropriate user. Returns true if such a
+// message was detected, even if it couldn't be handled properly.
+func (message *MailMessage) handleReplyForwarding() bool {
+	replyRe := regexp.MustCompile(fmt.Sprintf("^r-([a-z2-7]+)@%s$", config.GetString("host_name")))
+	var replyAddresses []string
+	for _, address := range message.to {
+		matches := replyRe.FindStringSubmatch(address.Address)
+		if len(matches) > 0 {
+			replyAddress, err := base32Codec.DecodeString(strings.ToUpper(matches[1]))
+			if err != nil {
+				fmt.Println("error:", err)
+				err = fmt.Errorf("Error decoding reply address: %v", err)
+				message.handleError(err, 0)
+				return true
+			}
+			replyAddresses = append(replyAddresses, string(replyAddress))
+		}
+	}
+	if len(replyAddresses) == 0 {
+		// This message does not represent a reply to a previous message sent out on the list.
+		return false
+	}
+
+	log.Printf("Decoded reply-to addresses: %v", replyAddresses)
+	data := struct {
+		From *mail.Address
+		Body string
+	}{message.from, message.body.HTML}
+	template, err := template.ParseFiles("reply.html")
+	if err != nil {
+		message.handleError(err, 0)
+		return true
+	}
+	var buffer bytes.Buffer
+	err = template.Execute(&buffer, data)
+	if err != nil {
+		message.handleError(err, 0)
+		return true
+	}
+	email := &ses.SendEmailInput{
+		Source: aws.String(fmt.Sprintf("%s <%s>", "Mailing List Admin", config.GetString("admin_address"))),
+		Destination: &ses.Destination{
+			ToAddresses: aws.StringSlice(replyAddresses),
+			CcAddresses: []*string{aws.String(config.GetString("admin_address"))},
+		},
+		Message: &ses.Message{
+			Subject: &ses.Content{
+				Data: aws.String(message.subject),
+			},
+			Body: &ses.Body{
+				Html: &ses.Content{
+					Data: aws.String(buffer.String()),
+				},
+			},
+		},
+	}
+	_, err = sesService.SendEmail(email)
+	if err != nil {
+		err = fmt.Errorf("Error forwarding reply: %v", err)
+		message.handleError(err, 0)
+	}
+
+	return true
 }
