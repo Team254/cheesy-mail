@@ -418,9 +418,10 @@ func (message *MailMessage) handleReplyForwarding() bool {
 
 	log.Printf("Decoded reply-to addresses: %v", replyAddresses)
 	data := struct {
-		From *mail.Address
-		Body string
-	}{message.from, message.body.HTML}
+		From     *mail.Address
+		HtmlBody string
+		TextBody string
+	}{message.from, message.body.HTML, message.body.Text}
 	template, err := template.ParseFiles("reply.html")
 	if err != nil {
 		message.handleError(err, 0)
@@ -432,8 +433,10 @@ func (message *MailMessage) handleReplyForwarding() bool {
 		message.handleError(err, 0)
 		return true
 	}
+	encodedFromAddress := strings.ToLower(base32Codec.EncodeToString([]byte(message.from.Address)))
 	email := &ses.SendEmailInput{
-		Source: aws.String(fmt.Sprintf("%s <%s>", "Mailing List Admin", config.GetString("admin_address"))),
+		Source: aws.String(fmt.Sprintf("%s <r-%s@%s>", message.from.Name, encodedFromAddress,
+			config.GetString("host_name"))),
 		Destination: &ses.Destination{
 			ToAddresses: aws.StringSlice(replyAddresses),
 			CcAddresses: []*string{aws.String(config.GetString("admin_address"))},

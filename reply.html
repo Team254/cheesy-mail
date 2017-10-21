@@ -5,4 +5,8 @@
   HTML template for forwarded replies to mailing list messages.
 */}}
 <h3>Reply from: {{.From.Name}} ({{.From.Address}})</h3>
-{{.Body}}
+{{if .HtmlBody}}
+  {{.HtmlBody}}
+{{else}}
+  <pre>{{.TextBody}}</pre>
+{{end}}
