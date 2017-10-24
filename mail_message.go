@@ -266,7 +266,7 @@ func (message *MailMessage) forwardEmail(recipient string) error {
 
 	encodedFromAddress := strings.ToLower(base32Codec.EncodeToString([]byte(message.from.Address)))
 	email := &ses.SendEmailInput{
-		Source: aws.String(fmt.Sprintf("%s <r-%s@%s>", message.from.Name, encodedFromAddress,
+		Source: aws.String(fmt.Sprintf("\"%s\" <r-%s@%s>", message.from.Name, encodedFromAddress,
 			config.GetString("host_name"))),
 		Destination: &ses.Destination{
 			ToAddresses: []*string{aws.String(recipient)},
@@ -435,7 +435,7 @@ func (message *MailMessage) handleReplyForwarding() bool {
 	}
 	encodedFromAddress := strings.ToLower(base32Codec.EncodeToString([]byte(message.from.Address)))
 	email := &ses.SendEmailInput{
-		Source: aws.String(fmt.Sprintf("%s <r-%s@%s>", message.from.Name, encodedFromAddress,
+		Source: aws.String(fmt.Sprintf("\"%s\" <r-%s@%s>", message.from.Name, encodedFromAddress,
 			config.GetString("host_name"))),
 		Destination: &ses.Destination{
 			ToAddresses: aws.StringSlice(replyAddresses),
