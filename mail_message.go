@@ -271,6 +271,7 @@ func (message *MailMessage) forwardEmail(recipient string) error {
 		Destination: &ses.Destination{
 			ToAddresses: []*string{aws.String(recipient)},
 		},
+		ReplyToAddresses: []*string{aws.String(message.from.Address)},
 		Message: &ses.Message{
 			Subject: &ses.Content{
 				Data: aws.String(message.getFormattedSubject()),
@@ -441,6 +442,7 @@ func (message *MailMessage) handleReplyForwarding() bool {
 			ToAddresses: aws.StringSlice(replyAddresses),
 			CcAddresses: []*string{aws.String(config.GetString("admin_address"))},
 		},
+		ReplyToAddresses: []*string{aws.String(message.from.Address)},
 		Message: &ses.Message{
 			Subject: &ses.Content{
 				Data: aws.String(message.subject),
