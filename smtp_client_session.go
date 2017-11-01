@@ -211,5 +211,14 @@ func (client *ClientSession) parseMessage() (*MailMessage, error) {
 		return nil, err
 	}
 
+	// Handle feedback reports as enmime does not.
+	if message.body.Root.ContentType() == "multipart/report" {
+		for _, part := range message.body.Inlines {
+			if part.ContentType() == "message/feedback-report" {
+				message.body.Text += "\n" + string(part.Content())
+			}
+		}
+	}
+
 	return &message, nil
 }
