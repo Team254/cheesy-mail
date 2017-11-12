@@ -122,6 +122,12 @@ func (message *MailMessage) Handle() {
 	}
 
 	if !message.isDebug() {
+		err = message.postToMattermost()
+		if err != nil {
+			err = fmt.Errorf("Error posting message to Mattermost: %v", err)
+			message.handleError(err, len(actualRecipients))
+		} 
+
 		err = message.postToBlog(senderUser)
 		if err != nil {
 			err = fmt.Errorf("Error posting message to blog after distributing to list: %v", err)
@@ -348,6 +354,24 @@ func (message *MailMessage) postToBlog(senderUser *User) error {
 		log.Printf("Error posting blog: %s", string(body))
 		return fmt.Errorf("Post failed: status code %d for URL %s", resp.StatusCode, url)
 	}
+	return nil
+}
+
+// Sends email data to a Mattermost webhook to post on the town-square channel
+func (message *MailMessage) postToMattermost() error  {
+	payload := fmt.Sprintf("payload = {\"channel\": \"town-square\", \"username\": \"Team 254 Mailing List Bot\", \"icon_url\": \"http://media.team254.com/2016/10/8fdb07a0-254-Swoosh.png\", \"text\": \"<!channel>\" %s}", message.body.HTML)
+	body := strings.NewReader(payload)
+	req, err := http.NewRequest("POST", "https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w", body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
 	return nil
 }
 
