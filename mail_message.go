@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"net/mail"
 	"os"
-	"os/exec"
 	"regexp"
 	"sort"
 	"strconv"
@@ -355,16 +354,16 @@ func (message *MailMessage) postToBlog(senderUser *User) error {
 	return nil
 }
 
-type Payload struct {
-	Channel  string `json:"channel"`
-	Username string `json:"username"`
-	Icon_url string `json:"icon_url"`
-	Text     string `json:"text"`
-}
-
 // Sends email data to a Mattermost webhook to post on the town-square channel
 func (message *MailMessage) postToMattermost() {
-	data := &Payload{Channel: config.GetString("mattermost_channel_name"), Username: config.GetString("mattermost_bot_username"), Icon_url: config.GetString("mattermost_icon_url"), Text: message.body.HTML}
+	body := fmt.Sprintf("@channel: %s", message.body.HTML)
+
+	data := struct {
+		Channel  string `json:"channel"`
+		Username string `json:"username"`
+		Icon_url string `json:"icon_url"`
+		Text     string `json:"text"`
+	}{config.GetString("mattermost_channel_name"), config.GetString("mattermost_bot_username"), config.GetString("mattermost_icon_url"), body}
 
     jsonData, err := json.Marshal(data)
     if err != nil {
@@ -373,20 +372,19 @@ func (message *MailMessage) postToMattermost() {
     }
 	
 	payload := fmt.Sprintf("'%s'", string(jsonData))
-	curl := exec.Command("curl", "-i", "-X", "POST", "-d", payload, config.GetString("mattermost_post_url"))
-	out, err := curl.Output()
+	req, err := http.NewRequest("POST", "https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w", payload)
 	if err != nil {
 		fmt.Println(err)
-		return
 	}
+	req.Header.Set("Content-Type", "application/json")
 
-	/* curl -i -X POST -d 'payload={
-		"channel": "town-square", 
-		"username": "Team 254 Mailing List", 
-		"icon_url": "https://media.team254.com/2016/10/8fdb07a0-254-Swoosh.png", 
-		"text": "@channel + message"}' 
-		https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w
-	*/
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer resp.Body.Close()
+
+	// curl -i -X POST -d 'payload={"channel": "town-square", "username": "Team 254 Mailing List", "icon_url": "https://media.team254.com/2016/10/8fdb07a0-254-Swoosh.png", "text": "@channel + message"}' https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w
 }
 
 // Sends a message containing the error to the original message author (and CCs the admin).
