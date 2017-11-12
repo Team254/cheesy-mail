@@ -10,6 +10,7 @@ import (
 	"crypto/md5"
 	"encoding/base32"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
@@ -21,6 +22,7 @@ import (
 	"net/http"
 	"net/mail"
 	"os"
+	"os/exec"
 	"regexp"
 	"sort"
 	"strconv"
@@ -122,11 +124,7 @@ func (message *MailMessage) Handle() {
 	}
 
 	if !message.isDebug() {
-		err = message.postToMattermost()
-		if err != nil {
-			err = fmt.Errorf("Error posting message to Mattermost: %v", err)
-			message.handleError(err, len(actualRecipients))
-		} 
+		message.postToMattermost()
 
 		err = message.postToBlog(senderUser)
 		if err != nil {
@@ -357,22 +355,38 @@ func (message *MailMessage) postToBlog(senderUser *User) error {
 	return nil
 }
 
-// Sends email data to a Mattermost webhook to post on the town-square channel
-func (message *MailMessage) postToMattermost() error  {
-	payload := fmt.Sprintf("payload = {\"channel\": \"town-square\", \"username\": \"Team 254 Mailing List Bot\", \"icon_url\": \"http://media.team254.com/2016/10/8fdb07a0-254-Swoosh.png\", \"text\": \"<!channel>\" %s}", message.body.HTML)
-	body := strings.NewReader(payload)
-	req, err := http.NewRequest("POST", "https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w", body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+type Payload struct {
+	Channel  string `json:"channel"`
+	Username string `json:"username"`
+	Icon_url string `json:"icon_url"`
+	Text     string `json:"text"`
+}
 
-	resp, err := http.DefaultClient.Do(req)
+// Sends email data to a Mattermost webhook to post on the town-square channel
+func (message *MailMessage) postToMattermost() {
+	data := &Payload{Channel: config.GetString("mattermost_channel_name"), Username: config.GetString("mattermost_bot_username"), Icon_url: config.GetString("mattermost_icon_url"), Text: message.body.HTML}
+
+    jsonData, err := json.Marshal(data)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+	
+	payload := fmt.Sprintf("'%s'", string(jsonData))
+	curl := exec.Command("curl", "-i", "-X", "POST", "-d", payload, config.GetString("mattermost_post_url"))
+	out, err := curl.Output()
 	if err != nil {
-		return err
+		fmt.Println(err)
+		return
 	}
-	defer resp.Body.Close()
-	return nil
+
+	/* curl -i -X POST -d 'payload={
+		"channel": "town-square", 
+		"username": "Team 254 Mailing List", 
+		"icon_url": "https://media.team254.com/2016/10/8fdb07a0-254-Swoosh.png", 
+		"text": "@channel + message"}' 
+		https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w
+	*/
 }
 
 // Sends a message containing the error to the original message author (and CCs the admin).
