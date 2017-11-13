@@ -356,19 +356,17 @@ func (message *MailMessage) postToBlog(senderUser *User) error {
 
 // Sends email data to a Mattermost webhook to post on the town-square channel
 func (message *MailMessage) postToMattermost() {
-	body := fmt.Sprintf("@channel: %s", message.body.HTML)
-
 	data := struct {
 		Channel  string `json:"channel"`
 		Username string `json:"username"`
 		Icon_url string `json:"icon_url"`
 		Text     string `json:"text"`
-	}{config.GetString("mattermost_channel_name"), config.GetString("mattermost_bot_username"), config.GetString("mattermost_icon_url"), body}
+	}{config.GetString("mattermost_channel_name"), config.GetString("mattermost_bot_username"), config.GetString("mattermost_icon_url"), fmt.Sprintf("@channel: %s", message.body.HTML)}
 
     jsonData, err := json.Marshal(data)
     if err != nil {
-        fmt.Println(err)
-        return
+		log.Printf("Error: %v", err)
+		return
     }
 	
 	req, err := http.NewRequest("POST", "https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w", fmt.Sprintf("'%s'", string(jsonData)))
