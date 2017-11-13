@@ -10,6 +10,7 @@ import (
 	"crypto/md5"
 	"encoding/base32"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go/aws"
@@ -122,6 +123,8 @@ func (message *MailMessage) Handle() {
 	}
 
 	if !message.isDebug() {
+		message.postToMattermost()
+
 		err = message.postToBlog(senderUser)
 		if err != nil {
 			err = fmt.Errorf("Error posting message to blog after distributing to list: %v", err)
@@ -349,6 +352,34 @@ func (message *MailMessage) postToBlog(senderUser *User) error {
 		return fmt.Errorf("Post failed: status code %d for URL %s", resp.StatusCode, url)
 	}
 	return nil
+}
+
+// Sends email data to a Mattermost webhook to post on the town-square channel
+func (message *MailMessage) postToMattermost() {
+	data := struct {
+		Channel  string `json:"channel"`
+		Username string `json:"username"`
+		Icon_url string `json:"icon_url"`
+		Text     string `json:"text"`
+	}{config.GetString("mattermost_channel_name"), config.GetString("mattermost_bot_username"), config.GetString("mattermost_icon_url"), fmt.Sprintf("@channel: %s", message.body.HTML)}
+
+    jsonData, err := json.Marshal(data)
+    if err != nil {
+		log.Printf("Error: %v", err)
+		return
+    }
+	
+	req, err := http.NewRequest("POST", "https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w", fmt.Sprintf("'%s'", string(jsonData)))
+	if err != nil {
+		log.Printf("Error: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("Error: %v", err)
+	}
+	defer resp.Body.Close()
 }
 
 // Sends a message containing the error to the original message author (and CCs the admin).

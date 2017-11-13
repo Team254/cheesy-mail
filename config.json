@@ -13,12 +13,20 @@
     "aws_access_key_id": "",
     "aws_secret_access_key": "",
     "attachment_save_path": "./attachments",
-    "blog_post_url": "http://www.team254.dev:8080/api/poof_post.php"
+    "blog_post_url": "http://www.team254.dev:8080/api/poof_post.php",
+    "mattermost_channel_name": "",
+    "mattermost_bot_username": "",
+    "mattermost_icon_url": "",
+    "mattermost_post_url": ""
   },
   "prod": {
     "aws_access_key_id": "AKIAJPRXRJ26RG3WZZJA",
     "aws_secret_access_key": "Encrypted:Sy59kHeCOggpSChA66/Fi1rpkVRmPSPtmUVZcwHUdT6Ixg5/6XhRjhXW+NfY\nUok9\n",
     "attachment_save_path": "/opt/media/media.team254.com/attachments",
-    "blog_post_url": "https://www.team254.com/api/poof_post.php"
+    "blog_post_url": "https://www.team254.com/api/poof_post.php",
+    "mattermost_channel_name": "town-square",
+    "mattermost_bot_username": "Team 254 Mailing List",
+    "mattermost_icon_url": "https://media.team254.com/2016/10/8fdb07a0-254-Swoosh.png",
+    "mattermost_post_url": "https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w"
   }
 }
