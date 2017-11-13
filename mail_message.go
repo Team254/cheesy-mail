@@ -369,7 +369,7 @@ func (message *MailMessage) postToMattermost() {
 		return
     }
 	
-	req, err := http.NewRequest("POST", "https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w", strings.NewReader(string(jsonData)))
+	req, err := http.NewRequest("POST", config.GetString("mattermost_post_url"), strings.NewReader(string(jsonData)))
 	if err != nil {
 		log.Printf("Error: %v", err)
 		return
