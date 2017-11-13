@@ -369,15 +369,17 @@ func (message *MailMessage) postToMattermost() {
 		return
     }
 	
-	req, err := http.NewRequest("POST", "https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w", fmt.Sprintf("'%s'", string(jsonData)))
+	req, err := http.NewRequest("POST", "https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w", strings.NewReader(string(jsonData)))
 	if err != nil {
 		log.Printf("Error: %v", err)
+		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.Printf("Error: %v", err)
+		return
 	}
 	defer resp.Body.Close()
 }
