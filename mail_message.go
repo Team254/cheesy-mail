@@ -371,20 +371,17 @@ func (message *MailMessage) postToMattermost() {
         return
     }
 	
-	payload := fmt.Sprintf("'%s'", string(jsonData))
-	req, err := http.NewRequest("POST", "https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w", payload)
+	req, err := http.NewRequest("POST", "https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w", fmt.Sprintf("'%s'", string(jsonData)))
 	if err != nil {
-		fmt.Println(err)
+		log.Printf("Error: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		fmt.Println(err)
+		log.Printf("Error: %v", err)
 	}
 	defer resp.Body.Close()
-
-	// curl -i -X POST -d 'payload={"channel": "town-square", "username": "Team 254 Mailing List", "icon_url": "https://media.team254.com/2016/10/8fdb07a0-254-Swoosh.png", "text": "@channel + message"}' https://chat.team254.com/hooks/jxwcc5t5obbqdjcska6z39bn9w
 }
 
 // Sends a message containing the error to the original message author (and CCs the admin).
