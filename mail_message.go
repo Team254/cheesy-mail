@@ -356,6 +356,19 @@ func (message *MailMessage) postToBlog(senderUser *User) error {
 
 // Sends email data to a Mattermost webhook to post on the town-square channel
 func (message *MailMessage) postToMattermost() {
+	sentToStudents := false
+
+	for _, list := range message.lists {
+		if list == studentList {
+			sentToStudents = true
+		}
+	}
+
+	if !sentToStudents { // Don't post to Mattermost if email wasn't sent to students
+		return
+	}
+
+
 	body := fmt.Sprintf("@channel:\n ### %s\n _From %s_\n %s", message.subject, message.from.Name, message.body.Text)
 
 	data := struct {
