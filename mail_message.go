@@ -13,11 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ses"
-	"github.com/jhillyerd/go.enmime"
-	"github.com/nu7hatch/gouuid"
-	"github.com/PuerkitoBio/goquery"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -29,6 +25,12 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/PuerkitoBio/goquery"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ses"
+	"github.com/jhillyerd/go.enmime"
+	"github.com/nu7hatch/gouuid"
 )
 
 const (
@@ -241,37 +243,39 @@ func (message *MailMessage) saveAttachments() error {
 		message.body.HTML = strings.Replace(message.body.HTML, matches[1], inlineImageUrl, -1)
 	}
 
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(message.body.HTML));
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(message.body.HTML))
 	if err != nil {
 		return err
 	}
 
-	doc.Find("img").Each(func(i int, s *goquery.Selection)) {
+	var goqueryErr error = nil
+	doc.Find("img").Each(func(i int, s *goquery.Selection) {
 		src, exists := s.Attr("src")
 		if exists && !strings.Contains(src, config.GetString("attachment_base_url")) {
 			resp, err := http.Get(src)
 			if err != nil {
-				return err
+				goqueryErr = err
 			}
 			defer resp.Body.Close()
 
-			fileName := fmt.Sprintf("%i%s"), i, src[strings.LastIndex(src, "."):len(src)]
+			fileName := fmt.Sprintf("%d%s", i, src[strings.LastIndex(src, "."):len(src)])
 			file, err := os.Create(fileName)
 			if err != nil {
-				return err
+				goqueryErr = err
 			}
 			defer file.Close()
 
-			_, err := io.Copy(file, resp.Body)
+			_, err = io.Copy(file, resp.Body)
 			if err != nil {
-				return err
+				goqueryErr = err
 			}
-			
-			s.SetAttr("src",
-					fmt.Sprintf("%s%s%s", config.GetStirng("attachment_base_url"),
-					message.attachmentDir,
-					fileName))
+
+			s.SetAttr("src", fmt.Sprintf("%s%s%s", config.GetString("attachment_base_url"), message.attachmentDir, fileName))
 		}
+	})
+
+	if goqueryErr != nil {
+		return goqueryErr
 	}
 
 	html, err := doc.Html()
@@ -409,7 +413,6 @@ func (message *MailMessage) postToMattermost() {
 		return
 	}
 
-
 	body := fmt.Sprintf("@channel:\n ### %s\n _From %s_\n %s", message.subject, message.from.Name, message.body.Text)
 
 	data := struct {
@@ -419,12 +422,12 @@ func (message *MailMessage) postToMattermost() {
 		Text     string `json:"text"`
 	}{config.GetString("mattermost_channel_name"), config.GetString("mattermost_bot_username"), config.GetString("mattermost_icon_url"), body}
 
-    jsonData, err := json.Marshal(data)
-    if err != nil {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
 		log.Printf("Error: %v", err)
 		return
-    }
-	
+	}
+
 	req, err := http.NewRequest("POST", config.GetString("mattermost_post_url"), strings.NewReader(string(jsonData)))
 	if err != nil {
 		log.Printf("Error: %v", err)
