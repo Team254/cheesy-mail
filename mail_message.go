@@ -201,10 +201,6 @@ func (message *MailMessage) isDebug() bool {
 
 // Saves attachments to a local directory that is served via HTTP.
 func (message *MailMessage) saveAttachments() error {
-	if len(message.body.Attachments) == 0 && len(message.body.Inlines) == 0 {
-		return nil
-	}
-
 	messageId, _ := uuid.NewV4()
 	message.attachmentDir = messageId.String()
 	basePath := fmt.Sprintf("%s/%s", config.GetString("attachment_save_path"), message.attachmentDir)
@@ -213,38 +209,37 @@ func (message *MailMessage) saveAttachments() error {
 		return err
 	}
 
-	for _, attachment := range message.body.Attachments {
-		filePath := fmt.Sprintf("%s/%s", basePath, attachment.FileName())
-		err = ioutil.WriteFile(filePath, attachment.Content(), 0644)
-		if err != nil {
-			return err
+	if len(message.body.Attachments) != 0 {
+		for _, attachment := range message.body.Attachments {
+			filePath := fmt.Sprintf("%s/%s", basePath, attachment.FileName())
+			err = ioutil.WriteFile(filePath, attachment.Content(), 0644)
+			if err != nil {
+				return err
+			}
+			message.attachments = append(message.attachments, attachment.FileName())
 		}
-		message.attachments = append(message.attachments, attachment.FileName())
 	}
 
-	for _, inline := range message.body.Inlines {
-		filePath := fmt.Sprintf("%s/%s", basePath, inline.FileName())
-		err = ioutil.WriteFile(filePath, inline.Content(), 0644)
-		if err != nil {
-			return err
-		}
-		message.inlines = append(message.inlines, inline.FileName())
+	if len(message.body.Inlines) != 0 {
+		for _, inline := range message.body.Inlines {
+			filePath := fmt.Sprintf("%s/%s", basePath, inline.FileName())
+			err = ioutil.WriteFile(filePath, inline.Content(), 0644)
+			if err != nil {
+				return err
+			}
+			message.inlines = append(message.inlines, inline.FileName())
 
-		// Rewrite the image tag in the HTML body to link to the inline image.
-		cid := inline.Header().Get("X-Attachment-Id")
-		inlineImageUrl := fmt.Sprintf("%s/%s/%s", config.GetString("attachment_base_url"),
-			message.attachmentDir, inline.FileName())
-		imageRe := regexp.MustCompile(fmt.Sprintf("<img src=[\"'](cid:%s)[\"']", cid))
-		matches := imageRe.FindStringSubmatch(message.body.HTML)
-		if matches == nil {
-			return fmt.Errorf("Could not find content ID '%s' in message body.", cid)
+			// Rewrite the image tag in the HTML body to link to the inline image.
+			cid := inline.Header().Get("X-Attachment-Id")
+			inlineImageUrl := fmt.Sprintf("%s/%s/%s", config.GetString("attachment_base_url"),
+				message.attachmentDir, inline.FileName())
+			imageRe := regexp.MustCompile(fmt.Sprintf("<img src=[\"'](cid:%s)[\"']", cid))
+			matches := imageRe.FindStringSubmatch(message.body.HTML)
+			if matches == nil {
+				return fmt.Errorf("Could not find content ID '%s' in message body.", cid)
+			}
+			message.body.HTML = strings.Replace(message.body.HTML, matches[1], inlineImageUrl, -1)
 		}
-		message.body.HTML = strings.Replace(message.body.HTML, matches[1], inlineImageUrl, -1)
-	}
-
-	err = os.MkdirAll(basePath+"/images", 0755)
-	if err != nil {
-		return err
 	}
 
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(message.body.HTML))
@@ -254,6 +249,13 @@ func (message *MailMessage) saveAttachments() error {
 
 	var goqueryErr error = nil
 	doc.Find("img").Each(func(i int, s *goquery.Selection) {
+		if i == 0 {
+			err = os.MkdirAll(basePath+"/images", 0755)
+			if err != nil {
+				goqueryErr = err
+			}
+		}
+
 		src, exists := s.Attr("src")
 		if exists && !strings.Contains(src, config.GetString("attachment_base_url")) {
 			resp, err := http.Get(src)
