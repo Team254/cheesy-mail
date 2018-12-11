@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -243,6 +242,11 @@ func (message *MailMessage) saveAttachments() error {
 		message.body.HTML = strings.Replace(message.body.HTML, matches[1], inlineImageUrl, -1)
 	}
 
+	err = os.MkdirAll(basePath+"/inlines", 0755)
+	if err != nil {
+		return err
+	}
+
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(message.body.HTML))
 	if err != nil {
 		return err
@@ -259,18 +263,17 @@ func (message *MailMessage) saveAttachments() error {
 			defer resp.Body.Close()
 
 			fileName := fmt.Sprintf("%d%s", i, src[strings.LastIndex(src, "."):len(src)])
-			file, err := os.Create(fileName)
-			if err != nil {
-				goqueryErr = err
-			}
-			defer file.Close()
-
-			_, err = io.Copy(file, resp.Body)
+			body, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
 				goqueryErr = err
 			}
 
-			s.SetAttr("src", fmt.Sprintf("%s%s%s", config.GetString("attachment_base_url"), message.attachmentDir, fileName))
+			err = ioutil.WriteFile(fmt.Sprintf("%s/inlines/%s", basePath, fileName), body, 0644)
+			if err != nil {
+				goqueryErr = err
+			}
+
+			s.SetAttr("src", fmt.Sprintf("%s/%s/inlines/%s", config.GetString("attachment_base_url"), message.attachmentDir, fileName))
 		}
 	})
 
