@@ -242,7 +242,7 @@ func (message *MailMessage) saveAttachments() error {
 		message.body.HTML = strings.Replace(message.body.HTML, matches[1], inlineImageUrl, -1)
 	}
 
-	err = os.MkdirAll(basePath+"/inlines", 0755)
+	err = os.MkdirAll(basePath+"/images", 0755)
 	if err != nil {
 		return err
 	}
@@ -268,12 +268,12 @@ func (message *MailMessage) saveAttachments() error {
 				goqueryErr = err
 			}
 
-			err = ioutil.WriteFile(fmt.Sprintf("%s/inlines/%s", basePath, fileName), body, 0644)
+			err = ioutil.WriteFile(fmt.Sprintf("%s/images/%s", basePath, fileName), body, 0644)
 			if err != nil {
 				goqueryErr = err
 			}
 
-			s.SetAttr("src", fmt.Sprintf("%s/%s/inlines/%s", config.GetString("attachment_base_url"), message.attachmentDir, fileName))
+			s.SetAttr("src", fmt.Sprintf("%s/%s/images/%s", config.GetString("attachment_base_url"), message.attachmentDir, fileName))
 		}
 	})
 
@@ -281,7 +281,7 @@ func (message *MailMessage) saveAttachments() error {
 		return goqueryErr
 	}
 
-	html, err := doc.Html()
+	html, err := doc.Find("body").Html()
 	if err != nil {
 		return err
 	}
