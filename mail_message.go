@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ses"
 	"github.com/jhillyerd/go.enmime"
 	"github.com/nu7hatch/gouuid"
+	"github.com/PuerkitoBio/goquery"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -239,6 +240,46 @@ func (message *MailMessage) saveAttachments() error {
 		}
 		message.body.HTML = strings.Replace(message.body.HTML, matches[1], inlineImageUrl, -1)
 	}
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(message.body.HTML));
+	if err != nil {
+		return err
+	}
+
+	doc.Find("img").Each(func(i int, s *goquery.Selection)) {
+		src, exists := s.Attr("src")
+		if exists && !strings.Contains(src, config.GetString("attachment_base_url")) {
+			resp, err := http.Get(src)
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+
+			fileName := fmt.Sprintf("%i%s"), i, src[strings.LastIndex(src, "."):len(src)]
+			file, err := os.Create(fileName)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+
+			_, err := io.Copy(file, resp.Body)
+			if err != nil {
+				return err
+			}
+			
+			s.SetAttr("src",
+					fmt.Sprintf("%s%s%s", config.GetStirng("attachment_base_url"),
+					message.attachmentDir,
+					fileName))
+		}
+	}
+
+	html, err := doc.Html()
+	if err != nil {
+		return err
+	}
+
+	message.body.HTML = html
 
 	return nil
 }
