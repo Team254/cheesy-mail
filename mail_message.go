@@ -13,10 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ses"
-	"github.com/jhillyerd/go.enmime"
-	"github.com/nu7hatch/gouuid"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -28,6 +24,12 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/PuerkitoBio/goquery"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ses"
+	"github.com/jhillyerd/go.enmime"
+	"github.com/nu7hatch/gouuid"
 )
 
 const (
@@ -240,6 +242,52 @@ func (message *MailMessage) saveAttachments() error {
 		message.body.HTML = strings.Replace(message.body.HTML, matches[1], inlineImageUrl, -1)
 	}
 
+	err = os.MkdirAll(basePath+"/inlines", 0755)
+	if err != nil {
+		return err
+	}
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(message.body.HTML))
+	if err != nil {
+		return err
+	}
+
+	var goqueryErr error = nil
+	doc.Find("img").Each(func(i int, s *goquery.Selection) {
+		src, exists := s.Attr("src")
+		if exists && !strings.Contains(src, config.GetString("attachment_base_url")) {
+			resp, err := http.Get(src)
+			if err != nil {
+				goqueryErr = err
+			}
+			defer resp.Body.Close()
+
+			fileName := fmt.Sprintf("%d%s", i, src[strings.LastIndex(src, "."):len(src)])
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				goqueryErr = err
+			}
+
+			err = ioutil.WriteFile(fmt.Sprintf("%s/inlines/%s", basePath, fileName), body, 0644)
+			if err != nil {
+				goqueryErr = err
+			}
+
+			s.SetAttr("src", fmt.Sprintf("%s/%s/inlines/%s", config.GetString("attachment_base_url"), message.attachmentDir, fileName))
+		}
+	})
+
+	if goqueryErr != nil {
+		return goqueryErr
+	}
+
+	html, err := doc.Html()
+	if err != nil {
+		return err
+	}
+
+	message.body.HTML = html
+
 	return nil
 }
 
@@ -368,7 +416,6 @@ func (message *MailMessage) postToMattermost() {
 		return
 	}
 
-
 	body := fmt.Sprintf("@channel:\n ### %s\n _From %s_\n %s", message.subject, message.from.Name, message.body.Text)
 
 	data := struct {
@@ -378,12 +425,12 @@ func (message *MailMessage) postToMattermost() {
 		Text     string `json:"text"`
 	}{config.GetString("mattermost_channel_name"), config.GetString("mattermost_bot_username"), config.GetString("mattermost_icon_url"), body}
 
-    jsonData, err := json.Marshal(data)
-    if err != nil {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
 		log.Printf("Error: %v", err)
 		return
-    }
-	
+	}
+
 	req, err := http.NewRequest("POST", config.GetString("mattermost_post_url"), strings.NewReader(string(jsonData)))
 	if err != nil {
 		log.Printf("Error: %v", err)
