@@ -253,6 +253,7 @@ func (message *MailMessage) saveAttachments() error {
 			err = os.MkdirAll(basePath+"/images", 0755)
 			if err != nil {
 				goqueryErr = err
+				return
 			}
 		}
 
@@ -261,12 +262,13 @@ func (message *MailMessage) saveAttachments() error {
 			resp, err := http.Get(src)
 			if err != nil {
 				goqueryErr = err
+				return
 			}
 			defer resp.Body.Close()
 
 			lastIndexOfSlash := strings.LastIndex(src, "/")
 			var fileName string
-			if lastIndexOfSlash == -1 {
+			if lastIndexOfSlash != -1 {
 				fileName = fmt.Sprintf("%d_%s.jpg", i, src[lastIndexOfSlash:len(src)])
 			} else {
 				fileName = fmt.Sprintf("%d.jpg", i)
@@ -275,11 +277,13 @@ func (message *MailMessage) saveAttachments() error {
 			body, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
 				goqueryErr = err
+				return
 			}
 
 			err = ioutil.WriteFile(fmt.Sprintf("%s/images/%s", basePath, fileName), body, 0644)
 			if err != nil {
 				goqueryErr = err
+				return
 			}
 
 			s.SetAttr("src", fmt.Sprintf("%s/%s/images/%s", config.GetString("attachment_base_url"), message.attachmentDir, fileName))
