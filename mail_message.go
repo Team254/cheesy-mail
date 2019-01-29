@@ -268,8 +268,8 @@ func (message *MailMessage) saveAttachments() error {
 
 			lastIndexOfSlash := strings.LastIndex(src, "/")
 			var fileName string
-			if lastIndexOfSlash != -1 {
-				fileName = fmt.Sprintf("%d_%s.jpg", i, src[lastIndexOfSlash:len(src)])
+			if lastIndexOfSlash != -1 && lastIndexOfSlash < len(src)-1 {
+				fileName = fmt.Sprintf("%d_%s.jpg", i, src[(lastIndexOfSlash+1):len(src)])
 			} else {
 				fileName = fmt.Sprintf("%d.jpg", i)
 			}
