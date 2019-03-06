@@ -525,6 +525,11 @@ func (message *MailMessage) handleReplyForwarding() bool {
 		return false
 	}
 
+	if strings.Contains(strings.ToLower(message.subject), "automatic reply") {
+		// Do not forward automatic replies
+		return true
+	}
+
 	log.Printf("Decoded reply-to addresses: %v", replyAddresses)
 	data := struct {
 		From     *mail.Address
