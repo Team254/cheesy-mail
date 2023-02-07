@@ -433,7 +433,7 @@ func (message *MailMessage) postToSlack() {
 		return
 	}
 
-	body := fmt.Sprintf("@channel:\n ### %s\n _From %s_\n %s", message.subject, message.from.Name, message.body.Text)
+	body := fmt.Sprintf("<!channel>\n*%s*\n\n_From: %s_\n\n%s", message.subject, message.from.Name, message.body.Text)
 
 	data := struct {
 		Text string `json:"text"`
