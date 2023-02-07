@@ -124,9 +124,9 @@ func (message *MailMessage) Handle() {
 		time.Sleep(time.Millisecond * time.Duration(config.GetInt("send_interval_ms")))
 	}
 
-	if !message.isDebug() {
-		message.postToMattermost()
+	message.postToSlack()
 
+	if !message.isDebug() {
 		err = message.postToBlog(senderUser)
 		if err != nil {
 			err = fmt.Errorf("Error posting message to blog after distributing to list: %v", err)
@@ -415,28 +415,29 @@ func (message *MailMessage) postToBlog(senderUser *User) error {
 	return nil
 }
 
-// Sends email data to a Mattermost webhook to post on the town-square channel
-func (message *MailMessage) postToMattermost() {
-	sentToStudents := false
-
-	for _, list := range message.lists {
-		if list == studentList {
-			sentToStudents = true
+// Sends email data to a Slack webhook to post on the appropriate channel.
+func (message *MailMessage) postToSlack() {
+	// Determine which channel-specific Slack webhook to post to. Messages sent only to the parents list shouldn't be
+	// posted at all.
+	webhook_url := ""
+	if message.isDebug() {
+		webhook_url = config.GetString("slack_webhook_url_debug")
+	} else {
+		for _, list := range message.lists {
+			if list == studentList {
+				webhook_url = config.GetString("slack_webhook_url_students")
+			}
 		}
 	}
-
-	if !sentToStudents { // Don't post to Mattermost if email wasn't sent to students
+	if webhook_url == "" {
 		return
 	}
 
 	body := fmt.Sprintf("@channel:\n ### %s\n _From %s_\n %s", message.subject, message.from.Name, message.body.Text)
 
 	data := struct {
-		Channel  string `json:"channel"`
-		Username string `json:"username"`
-		Icon_url string `json:"icon_url"`
-		Text     string `json:"text"`
-	}{config.GetString("mattermost_channel_name"), config.GetString("mattermost_bot_username"), config.GetString("mattermost_icon_url"), body}
+		Text string `json:"text"`
+	}{body}
 
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -444,7 +445,7 @@ func (message *MailMessage) postToMattermost() {
 		return
 	}
 
-	req, err := http.NewRequest("POST", config.GetString("mattermost_post_url"), strings.NewReader(string(jsonData)))
+	req, err := http.NewRequest("POST", webhook_url, strings.NewReader(string(jsonData)))
 	if err != nil {
 		log.Printf("Error: %v", err)
 		return

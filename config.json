@@ -14,19 +14,15 @@
     "aws_secret_access_key": "",
     "attachment_save_path": "./attachments",
     "blog_post_url": "http://www.team254.dev:8080/api/poof_post.php",
-    "mattermost_channel_name": "",
-    "mattermost_bot_username": "",
-    "mattermost_icon_url": "",
-    "mattermost_post_url": ""
+    "slack_webhook_url_debug": "",
+    "slack_webhook_url_students": ""
   },
   "prod": {
     "aws_access_key_id": "AKIAJPRXRJ26RG3WZZJA",
     "aws_secret_access_key": "Encrypted:Sy59kHeCOggpSChA66/Fi1rpkVRmPSPtmUVZcwHUdT6Ixg5/6XhRjhXW+NfY\nUok9\n",
     "attachment_save_path": "/opt/media/media.team254.com/attachments",
     "blog_post_url": "https://www.team254.com/api/poof_post.php",
-    "mattermost_channel_name": "town-square",
-    "mattermost_bot_username": "Team 254 Mailing List",
-    "mattermost_icon_url": "https://media.team254.com/2017/08/972f07db-254-square.png",
-    "mattermost_post_url": "Encrypted:aK7QBHlLOio2f3okGAIHAi6H804us8GDg2AejzWPOoD5eMjSo9WsXsyzNI1TWSk6SF2HYBOTgMfVWpPHDfZjIA==\n"
+    "slack_webhook_url_debug": "https://hooks.slack.com/services/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",
+    "slack_webhook_url_students": ""
   }
 }
