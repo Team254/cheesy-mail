@@ -59,7 +59,7 @@ func (message *MailMessage) Handle() {
 	log.Printf("From: %v", message.from)
 	log.Printf("To: %v", message.to)
 	log.Printf("Subject: %s", message.subject)
-	log.Printf("Body: %s", message.body.HTML)
+	log.Printf("Body: %s", message.body.Html)
 	log.Printf("Attachment count: %d", len(message.body.Attachments))
 	log.Printf("Inline count: %d", len(message.body.Inlines))
 
@@ -84,7 +84,7 @@ func (message *MailMessage) Handle() {
 	}
 	log.Printf("Lists addressed to: %v", message.lists)
 
-	if message.body.HTML == "" {
+	if message.body.Html == "" {
 		err = errors.New("Rejected message with blank HTML body; can't process plain-text messages. " +
 			"Please re-send as HTML (try using a different client).")
 		message.handleError(err, 0)
@@ -234,15 +234,15 @@ func (message *MailMessage) saveAttachments() error {
 			inlineImageUrl := fmt.Sprintf("%s/%s/%s", config.GetString("attachment_base_url"),
 				message.attachmentDir, inline.FileName())
 			imageRe := regexp.MustCompile(fmt.Sprintf("<img src=[\"'](cid:%s)[\"']", cid))
-			matches := imageRe.FindStringSubmatch(message.body.HTML)
+			matches := imageRe.FindStringSubmatch(message.body.Html)
 			if matches == nil {
 				return fmt.Errorf("Could not find content ID '%s' in message body.", cid)
 			}
-			message.body.HTML = strings.Replace(message.body.HTML, matches[1], inlineImageUrl, -1)
+			message.body.Html = strings.Replace(message.body.Html, matches[1], inlineImageUrl, -1)
 		}
 	}
 
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(message.body.HTML))
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(message.body.Html))
 	if err != nil {
 		return err
 	}
@@ -299,7 +299,7 @@ func (message *MailMessage) saveAttachments() error {
 		return err
 	}
 
-	message.body.HTML = html
+	message.body.Html = html
 
 	return nil
 }
@@ -316,7 +316,7 @@ func (message *MailMessage) forwardEmail(recipient string) error {
 		Date              string
 		AttachmentBaseUrl string
 		Attachments       []string
-	}{message.body.HTML, message.isDebug(), message.allRecipients, sendTime.Format("January 2, 2006"),
+	}{message.body.Html, message.isDebug(), message.allRecipients, sendTime.Format("January 2, 2006"),
 		attachmentBaseUrl, message.attachments}
 	template, err := template.ParseFiles("message.html")
 	if err != nil {
@@ -359,7 +359,7 @@ func (message *MailMessage) postToBlog(senderUser *User) error {
 		Body              string
 		AttachmentBaseUrl string
 		Attachments       []string
-	}{message.body.HTML, attachmentBaseUrl, message.attachments}
+	}{message.body.Html, attachmentBaseUrl, message.attachments}
 	template, err := template.ParseFiles("blog_post.html")
 	if err != nil {
 		return err
@@ -535,7 +535,7 @@ func (message *MailMessage) handleReplyForwarding() bool {
 		From     *mail.Address
 		HtmlBody string
 		TextBody string
-	}{message.from, message.body.HTML, message.body.Text}
+	}{message.from, message.body.Html, message.body.Text}
 	template, err := template.ParseFiles("reply.html")
 	if err != nil {
 		message.handleError(err, 0)
