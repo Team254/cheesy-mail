@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -50,6 +52,27 @@ func GetUserByEmail(email string) (*User, error) {
 	}
 
 	return users[0], nil
+}
+
+func (user *User) HasPermission(permission string) bool {
+	for _, userPermission := range user.Permissions {
+		if userPermission == permission {
+			return true
+		}
+	}
+	return false
+}
+
+func (user *User) UnsubscribeLink() string {
+	if !user.HasPermission("MAILINGLIST_UNSUBSCRIBE") {
+		return ""
+	}
+
+	hash := sha256.New()
+	hash.Write([]byte(user.Email + config.GetString("mail_secret")))
+	signature := hex.EncodeToString(hash.Sum(nil))
+
+	return fmt.Sprintf("https://members.team254.com/mail/unsubscribe?email=%s&signature=%s", user.Email, signature)
 }
 
 func getApiRequest(path string) (string, error) {

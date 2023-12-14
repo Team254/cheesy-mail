@@ -47,7 +47,7 @@ type MailMessage struct {
 	subject       string
 	body          *enmime.MIMEBody
 	lists         []string
-	allRecipients []string
+	allRecipients []*User
 	attachmentDir string
 	attachments   []string
 	inlines       []string
@@ -105,17 +105,17 @@ func (message *MailMessage) Handle() {
 	}
 
 	log.Printf("Redistributing message to %d recipients: %v", len(message.allRecipients), message.allRecipients)
-	var actualRecipients []string
+	var actualRecipients []*User
 	if message.isDebug() {
 		// Only send the message to the original sender.
-		actualRecipients = []string{message.from.Address}
+		actualRecipients = []*User{senderUser}
 	} else {
 		actualRecipients = message.allRecipients
 	}
 	for index, recipient := range actualRecipients {
 		err = message.forwardEmail(recipient)
 		if err != nil {
-			err = fmt.Errorf("Error sending message to %s: %v", recipient, err)
+			err = fmt.Errorf("Error sending message to %s: %v", recipient.Email, err)
 			message.handleError(err, index)
 			return
 		}
@@ -141,14 +141,7 @@ func (message *MailMessage) getListsAndCheckPermission(senderUser *User) ([]stri
 	var lists []string
 	for _, toEmail := range message.to {
 		if list, ok := listMap[strings.ToLower(toEmail.Address)]; ok {
-			hasPermission := false
-			for _, permission := range senderUser.Permissions {
-				if permission == list+"_SEND" {
-					hasPermission = true
-					break
-				}
-			}
-			if !hasPermission {
+			if !senderUser.HasPermission(list + "_SEND") {
 				return nil, fmt.Errorf("Sender '%s' does not have permission to mail list '%s'.",
 					message.from.Address, toEmail)
 			}
@@ -160,8 +153,8 @@ func (message *MailMessage) getListsAndCheckPermission(senderUser *User) ([]stri
 
 // Returns the list of all addresses to distribute the message to, given the list addresses the original
 // message was sent to.
-func (message *MailMessage) getRecipients() ([]string, error) {
-	recipientSet := make(map[string]struct{}) // Simulates a set for deduplication
+func (message *MailMessage) getRecipients() ([]*User, error) {
+	recipientSet := make(map[string]*User) // Simulates a set for deduplication
 
 	for _, list := range message.lists {
 		users, err := GetUsersByPermission(list + "_RECEIVE")
@@ -169,15 +162,17 @@ func (message *MailMessage) getRecipients() ([]string, error) {
 			return nil, err
 		}
 		for _, user := range users {
-			recipientSet[user.Email] = struct{}{}
+			recipientSet[user.Email] = user
 		}
 	}
 
-	var recipients sort.StringSlice
-	for recipient := range recipientSet {
+	var recipients []*User
+	for _, recipient := range recipientSet {
 		recipients = append(recipients, recipient)
 	}
-	recipients.Sort()
+	sort.Slice(recipients, func(i, j int) bool {
+		return recipients[i].Email < recipients[j].Email
+	})
 	return recipients, nil
 }
 
@@ -305,19 +300,27 @@ func (message *MailMessage) saveAttachments() error {
 }
 
 // Sends the reformatted original message on to the given recipient.
-func (message *MailMessage) forwardEmail(recipient string) error {
+func (message *MailMessage) forwardEmail(recipient *User) error {
 	location, _ := time.LoadLocation("America/Los_Angeles")
 	sendTime := time.Now().In(location)
 	attachmentBaseUrl := fmt.Sprintf("%s/%s", config.GetString("attachment_base_url"), message.attachmentDir)
 	data := struct {
 		Body              string
 		IsDebug           bool
-		AllRecipients     []string
+		AllRecipients     []*User
 		Date              string
 		AttachmentBaseUrl string
 		Attachments       []string
-	}{message.body.Html, message.isDebug(), message.allRecipients, sendTime.Format("January 2, 2006"),
-		attachmentBaseUrl, message.attachments}
+		UnsubscribeLink   string
+	}{
+		message.body.Html,
+		message.isDebug(),
+		message.allRecipients,
+		sendTime.Format("January 2, 2006"),
+		attachmentBaseUrl,
+		message.attachments,
+		recipient.UnsubscribeLink(),
+	}
 	template, err := template.ParseFiles("message.html")
 	if err != nil {
 		return err
@@ -333,7 +336,7 @@ func (message *MailMessage) forwardEmail(recipient string) error {
 		Source: aws.String(fmt.Sprintf("\"%s\" <r-%s@%s>", message.from.Name, encodedFromAddress,
 			config.GetString("host_name"))),
 		Destination: &ses.Destination{
-			ToAddresses: []*string{aws.String(recipient)},
+			ToAddresses: []*string{aws.String(recipient.Email)},
 		},
 		ReplyToAddresses: []*string{aws.String(message.from.Address)},
 		Message: &ses.Message{

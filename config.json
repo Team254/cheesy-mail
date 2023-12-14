@@ -14,6 +14,7 @@
     "aws_secret_access_key": "",
     "attachment_save_path": "./attachments",
     "blog_post_url": "http://www.team254.dev:8080/api/poof_post.php",
+    "mail_secret": "mailsecretdev",
     "slack_webhook_url_debug": "",
     "slack_webhook_url_students": ""
   },
@@ -22,6 +23,7 @@
     "aws_secret_access_key": "Encrypted:Sy59kHeCOggpSChA66/Fi1rpkVRmPSPtmUVZcwHUdT6Ixg5/6XhRjhXW+NfY\nUok9\n",
     "attachment_save_path": "/opt/media/media.team254.com/attachments",
     "blog_post_url": "https://www.team254.com/api/poof_post.php",
+    "mail_secret": "Encrypted:eTX9LSZJJe4PY9kxtLzEUBTxd7qoenbi0ONEEAWZWdk=",
     "slack_webhook_url_debug": "Encrypted:u4Q0LJJ+QLgD3HR9hnDGPae/3ZwasTn4LIq6czIcou2cSr58UKuj6NYFlwwM\nnQ03SswNqbVf1T66A9kmFnVOKUvymK2upnR+vYaFQUYiXtk=\n",
     "slack_webhook_url_students": "Encrypted:u4Q0LJJ+QLgD3HR9hnDGPae/3ZwasTn4LIq6czIcou1a4HxZ/8xdPmO7EUa0\nbQGrb2Kjycr0koQjyaP8/DqSR4k1sA7aNDUbtjskpuHwRhQ=\n"
   }
