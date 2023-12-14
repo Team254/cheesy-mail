@@ -104,7 +104,11 @@ func (message *MailMessage) Handle() {
 		return
 	}
 
-	log.Printf("Redistributing message to %d recipients: %v", len(message.allRecipients), message.allRecipients)
+	recipientAddresses := make([]string, len(message.allRecipients))
+	for i, recipient := range message.allRecipients {
+		recipientAddresses[i] = recipient.Email
+	}
+	log.Printf("Redistributing message to %d recipients: %v", len(message.allRecipients), recipientAddresses)
 	var actualRecipients []*User
 	if message.isDebug() {
 		// Only send the message to the original sender.
