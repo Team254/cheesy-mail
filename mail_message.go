@@ -8,11 +8,17 @@ package main
 import (
 	"bytes"
 	"crypto/md5"
+	"crypto/sha256"
 	"encoding/base32"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/PuerkitoBio/goquery"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ses"
+	"github.com/jhillyerd/go.enmime"
+	"github.com/nu7hatch/gouuid"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -24,12 +30,6 @@ import (
 	"strings"
 	"text/template"
 	"time"
-
-	"github.com/PuerkitoBio/goquery"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ses"
-	"github.com/jhillyerd/go.enmime"
-	"github.com/nu7hatch/gouuid"
 )
 
 const (
@@ -46,6 +46,7 @@ type MailMessage struct {
 	to            []*mail.Address
 	subject       string
 	body          *enmime.MIMEBody
+	messageId     string
 	lists         []string
 	allRecipients []*User
 	attachmentDir string
@@ -196,6 +197,18 @@ func (message *MailMessage) getFormattedSubject() string {
 // Returns true if the subject line contains "DEBUG".
 func (message *MailMessage) isDebug() bool {
 	return strings.Contains(message.subject, "DEBUG")
+}
+
+// GetDeduplicationKey returns a unique key for identifying duplicate messages.
+// Uses Message-ID if present, otherwise falls back to a SHA256 hash of from+subject+body.
+func (message *MailMessage) GetDeduplicationKey() string {
+	if message.messageId != "" {
+		return "msgid:" + message.messageId
+	}
+	// Fall back to hash of from+subject+body
+	content := message.from.Address + message.subject + message.body.Html
+	hash := sha256.Sum256([]byte(content))
+	return "hash:" + hex.EncodeToString(hash[:])
 }
 
 // Saves attachments to a local directory that is served via HTTP.

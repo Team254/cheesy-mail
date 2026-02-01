@@ -206,6 +206,7 @@ func (client *ClientSession) parseMessage() (*MailMessage, error) {
 		return nil, err
 	}
 	message.subject = parsedMessage.Header.Get("Subject")
+	message.messageId = parsedMessage.Header.Get("Message-Id")
 	message.body, err = enmime.ParseMIMEBody(parsedMessage)
 	if err != nil {
 		return nil, err

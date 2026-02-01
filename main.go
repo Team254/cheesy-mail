@@ -16,6 +16,7 @@ import (
 
 var config *Config
 var sesService *ses.SES
+var messageCache *MessageCache
 
 func main() {
 	logfile, err := os.OpenFile("cheesy-mail.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
@@ -28,6 +29,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error reading configs: %v", err)
 	}
+
+	messageCache = NewMessageCache()
 
 	// Start the SMTP server.
 	server := NewSmtpServer(config)
@@ -42,6 +45,13 @@ func main() {
 	// Loop forever over incoming messages.
 	for {
 		message := <-server.messageReceivedChan
+
+		dedupKey := message.GetDeduplicationKey()
+		if messageCache.IsDuplicate(dedupKey) {
+			log.Printf("Duplicate message detected, skipping: From=%v, Subject=%s", message.from, message.subject)
+			continue
+		}
+
 		message.Handle()
 	}
 }
