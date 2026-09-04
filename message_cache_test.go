@@ -6,10 +6,11 @@
 package main
 
 import (
-	"github.com/jhillyerd/go.enmime"
 	"net/mail"
 	"strings"
 	"testing"
+
+	"github.com/jhillyerd/enmime"
 )
 
 func TestMessageCache_IsDuplicate(t *testing.T) {
@@ -40,7 +41,7 @@ func TestMailMessage_GetDeduplicationKey_WithMessageID(t *testing.T) {
 	message := &MailMessage{
 		from:      &mail.Address{Address: "test@example.com"},
 		subject:   "Test Subject",
-		body:      &enmime.MIMEBody{Html: "<p>Test body</p>"},
+		body:      &enmime.Envelope{HTML: "<p>Test body</p>"},
 		messageId: "<abc123@example.com>",
 	}
 
@@ -55,7 +56,7 @@ func TestMailMessage_GetDeduplicationKey_WithoutMessageID(t *testing.T) {
 	message := &MailMessage{
 		from:    &mail.Address{Address: "test@example.com"},
 		subject: "Test Subject",
-		body:    &enmime.MIMEBody{Html: "<p>Test body</p>"},
+		body:    &enmime.Envelope{HTML: "<p>Test body</p>"},
 	}
 
 	key := message.GetDeduplicationKey()
@@ -71,13 +72,13 @@ func TestMailMessage_GetDeduplicationKey_SameContentSameHash(t *testing.T) {
 	message1 := &MailMessage{
 		from:    &mail.Address{Address: "test@example.com"},
 		subject: "Test Subject",
-		body:    &enmime.MIMEBody{Html: "<p>Test body</p>"},
+		body:    &enmime.Envelope{HTML: "<p>Test body</p>"},
 	}
 
 	message2 := &MailMessage{
 		from:    &mail.Address{Address: "test@example.com"},
 		subject: "Test Subject",
-		body:    &enmime.MIMEBody{Html: "<p>Test body</p>"},
+		body:    &enmime.Envelope{HTML: "<p>Test body</p>"},
 	}
 
 	if message1.GetDeduplicationKey() != message2.GetDeduplicationKey() {
@@ -89,13 +90,13 @@ func TestMailMessage_GetDeduplicationKey_DifferentContentDifferentHash(t *testin
 	message1 := &MailMessage{
 		from:    &mail.Address{Address: "test@example.com"},
 		subject: "Test Subject",
-		body:    &enmime.MIMEBody{Html: "<p>Test body</p>"},
+		body:    &enmime.Envelope{HTML: "<p>Test body</p>"},
 	}
 
 	message2 := &MailMessage{
 		from:    &mail.Address{Address: "test@example.com"},
 		subject: "Different Subject",
-		body:    &enmime.MIMEBody{Html: "<p>Test body</p>"},
+		body:    &enmime.Envelope{HTML: "<p>Test body</p>"},
 	}
 
 	if message1.GetDeduplicationKey() == message2.GetDeduplicationKey() {

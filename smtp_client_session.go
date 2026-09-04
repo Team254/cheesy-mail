@@ -10,13 +10,14 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/jhillyerd/go.enmime"
 	"io"
 	"log"
 	"net"
 	"net/mail"
 	"strings"
 	"time"
+
+	"github.com/jhillyerd/enmime"
 )
 
 // Progression of SMTP client session states.
@@ -207,16 +208,18 @@ func (client *ClientSession) parseMessage() (*MailMessage, error) {
 	}
 	message.subject = parsedMessage.Header.Get("Subject")
 	message.messageId = parsedMessage.Header.Get("Message-Id")
-	message.body, err = enmime.ParseMIMEBody(parsedMessage)
+	message.body, err = enmime.ReadEnvelope(bytes.NewBufferString(client.data))
 	if err != nil {
 		return nil, err
 	}
 
 	// Handle feedback reports as enmime does not.
-	if message.body.Root != nil && message.body.Root.ContentType() == "multipart/report" {
-		for _, part := range message.body.Inlines {
-			if part.ContentType() == "message/feedback-report" {
-				message.body.Text += "\n" + string(part.Content())
+	if message.body.Root != nil && message.body.Root.ContentType == "multipart/report" {
+		feedbackReportParts := append([]*enmime.Part{}, message.body.Inlines...)
+		feedbackReportParts = append(feedbackReportParts, message.body.OtherParts...)
+		for _, part := range feedbackReportParts {
+			if part.ContentType == "message/feedback-report" {
+				message.body.Text += "\n" + string(part.Content)
 			}
 		}
 	}

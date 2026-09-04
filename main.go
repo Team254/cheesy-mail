@@ -6,16 +6,19 @@
 package main
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ses"
+	"context"
 	"log"
 	"os"
+
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
 )
 
 var config *Config
-var sesService *ses.SES
+var sesService interface {
+	SendEmail(context.Context, *ses.SendEmailInput, ...func(*ses.Options)) (*ses.SendEmailOutput, error)
+}
 var messageCache *MessageCache
 
 func main() {
@@ -37,10 +40,19 @@ func main() {
 	go server.Run()
 
 	// Configure AWS client session.
-	awsConfig := aws.Config{Region: aws.String(config.GetString("aws_region")),
-		Credentials: credentials.NewStaticCredentials(config.GetString("aws_access_key_id"),
-			config.GetString("aws_secret_access_key"), "")}
-	sesService = ses.New(session.New(&awsConfig))
+	awsConfig, err := awsconfig.LoadDefaultConfig(
+		context.Background(),
+		awsconfig.WithRegion(config.GetString("aws_region")),
+		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			config.GetString("aws_access_key_id"),
+			config.GetString("aws_secret_access_key"),
+			"",
+		)),
+	)
+	if err != nil {
+		log.Fatalf("Error configuring AWS: %v", err)
+	}
+	sesService = ses.NewFromConfig(awsConfig)
 
 	// Loop forever over incoming messages.
 	for {

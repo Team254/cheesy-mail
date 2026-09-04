@@ -12,7 +12,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -24,7 +23,7 @@ type Config struct {
 
 // Parses the configs from JSON and returns an object the values can be accessed from.
 func ReadConfig() (*Config, error) {
-	data, err := ioutil.ReadFile("config.json")
+	data, err := os.ReadFile("config.json")
 	if err != nil {
 		return nil, err
 	}

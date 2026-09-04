@@ -7,6 +7,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/md5"
 	"crypto/sha256"
 	"encoding/base32"
@@ -14,12 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/PuerkitoBio/goquery"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ses"
-	"github.com/jhillyerd/go.enmime"
-	"github.com/nu7hatch/gouuid"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"net/mail"
@@ -30,6 +26,13 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/PuerkitoBio/goquery"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
+	"github.com/aws/aws-sdk-go-v2/service/ses/types"
+	"github.com/google/uuid"
+	"github.com/jhillyerd/enmime"
 )
 
 const (
@@ -45,7 +48,7 @@ type MailMessage struct {
 	from          *mail.Address
 	to            []*mail.Address
 	subject       string
-	body          *enmime.MIMEBody
+	body          *enmime.Envelope
 	messageId     string
 	lists         []string
 	allRecipients []*User
@@ -60,7 +63,7 @@ func (message *MailMessage) Handle() {
 	log.Printf("From: %v", message.from)
 	log.Printf("To: %v", message.to)
 	log.Printf("Subject: %s", message.subject)
-	log.Printf("Body: %s", message.body.Html)
+	log.Printf("Body: %s", message.body.HTML)
 	log.Printf("Attachment count: %d", len(message.body.Attachments))
 	log.Printf("Inline count: %d", len(message.body.Inlines))
 
@@ -85,7 +88,7 @@ func (message *MailMessage) Handle() {
 	}
 	log.Printf("Lists addressed to: %v", message.lists)
 
-	if message.body.Html == "" {
+	if message.body.HTML == "" {
 		err = errors.New("Rejected message with blank HTML body; can't process plain-text messages. " +
 			"Please re-send as HTML (try using a different client).")
 		message.handleError(err, 0)
@@ -206,14 +209,14 @@ func (message *MailMessage) GetDeduplicationKey() string {
 		return "msgid:" + message.messageId
 	}
 	// Fall back to hash of from+subject+body
-	content := message.from.Address + message.subject + message.body.Html
+	content := message.from.Address + message.subject + message.body.HTML
 	hash := sha256.Sum256([]byte(content))
 	return "hash:" + hex.EncodeToString(hash[:])
 }
 
 // Saves attachments to a local directory that is served via HTTP.
 func (message *MailMessage) saveAttachments() error {
-	messageId, _ := uuid.NewV4()
+	messageId := uuid.New()
 	message.attachmentDir = messageId.String()
 	basePath := fmt.Sprintf("%s/%s", config.GetString("attachment_save_path"), message.attachmentDir)
 	err := os.MkdirAll(basePath, 0755)
@@ -223,38 +226,38 @@ func (message *MailMessage) saveAttachments() error {
 
 	if len(message.body.Attachments) != 0 {
 		for _, attachment := range message.body.Attachments {
-			filePath := fmt.Sprintf("%s/%s", basePath, attachment.FileName())
-			err = ioutil.WriteFile(filePath, attachment.Content(), 0644)
+			filePath := fmt.Sprintf("%s/%s", basePath, attachment.FileName)
+			err = os.WriteFile(filePath, attachment.Content, 0644)
 			if err != nil {
 				return err
 			}
-			message.attachments = append(message.attachments, attachment.FileName())
+			message.attachments = append(message.attachments, attachment.FileName)
 		}
 	}
 
 	if len(message.body.Inlines) != 0 {
 		for _, inline := range message.body.Inlines {
-			filePath := fmt.Sprintf("%s/%s", basePath, inline.FileName())
-			err = ioutil.WriteFile(filePath, inline.Content(), 0644)
+			filePath := fmt.Sprintf("%s/%s", basePath, inline.FileName)
+			err = os.WriteFile(filePath, inline.Content, 0644)
 			if err != nil {
 				return err
 			}
-			message.inlines = append(message.inlines, inline.FileName())
+			message.inlines = append(message.inlines, inline.FileName)
 
 			// Rewrite the image tag in the HTML body to link to the inline image.
-			cid := inline.Header().Get("X-Attachment-Id")
+			cid := inline.Header.Get("X-Attachment-Id")
 			inlineImageUrl := fmt.Sprintf("%s/%s/%s", config.GetString("attachment_base_url"),
-				message.attachmentDir, inline.FileName())
+				message.attachmentDir, inline.FileName)
 			imageRe := regexp.MustCompile(fmt.Sprintf("<img src=[\"'](cid:%s)[\"']", cid))
-			matches := imageRe.FindStringSubmatch(message.body.Html)
+			matches := imageRe.FindStringSubmatch(message.body.HTML)
 			if matches == nil {
 				return fmt.Errorf("Could not find content ID '%s' in message body.", cid)
 			}
-			message.body.Html = strings.Replace(message.body.Html, matches[1], inlineImageUrl, -1)
+			message.body.HTML = strings.Replace(message.body.HTML, matches[1], inlineImageUrl, -1)
 		}
 	}
 
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(message.body.Html))
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(message.body.HTML))
 	if err != nil {
 		return err
 	}
@@ -286,13 +289,13 @@ func (message *MailMessage) saveAttachments() error {
 				fileName = fmt.Sprintf("%d.jpg", i)
 			}
 
-			body, err := ioutil.ReadAll(resp.Body)
+			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				goqueryErr = err
 				return
 			}
 
-			err = ioutil.WriteFile(fmt.Sprintf("%s/images/%s", basePath, fileName), body, 0644)
+			err = os.WriteFile(fmt.Sprintf("%s/images/%s", basePath, fileName), body, 0644)
 			if err != nil {
 				goqueryErr = err
 				return
@@ -311,7 +314,7 @@ func (message *MailMessage) saveAttachments() error {
 		return err
 	}
 
-	message.body.Html = html
+	message.body.HTML = html
 
 	return nil
 }
@@ -330,7 +333,7 @@ func (message *MailMessage) forwardEmail(recipient *User) error {
 		Attachments       []string
 		UnsubscribeLink   string
 	}{
-		message.body.Html,
+		message.body.HTML,
 		message.isDebug(),
 		message.allRecipients,
 		sendTime.Format("January 2, 2006"),
@@ -352,23 +355,23 @@ func (message *MailMessage) forwardEmail(recipient *User) error {
 	email := &ses.SendEmailInput{
 		Source: aws.String(fmt.Sprintf("\"%s\" <r-%s@%s>", message.from.Name, encodedFromAddress,
 			config.GetString("host_name"))),
-		Destination: &ses.Destination{
-			ToAddresses: []*string{aws.String(recipient.Email)},
+		Destination: &types.Destination{
+			ToAddresses: []string{recipient.Email},
 		},
-		ReplyToAddresses: []*string{aws.String(message.from.Address)},
-		Message: &ses.Message{
-			Subject: &ses.Content{
+		ReplyToAddresses: []string{message.from.Address},
+		Message: &types.Message{
+			Subject: &types.Content{
 				Data: aws.String(message.getFormattedSubject()),
 			},
-			Body: &ses.Body{
-				Html: &ses.Content{
+			Body: &types.Body{
+				Html: &types.Content{
 					Data: aws.String(buffer.String()),
 				},
 			},
 		},
 	}
 
-	_, err = sesService.SendEmail(email)
+	_, err = sesService.SendEmail(context.Background(), email)
 	return err
 }
 
@@ -379,7 +382,7 @@ func (message *MailMessage) postToBlog(senderUser *User) error {
 		Body              string
 		AttachmentBaseUrl string
 		Attachments       []string
-	}{message.body.Html, attachmentBaseUrl, message.attachments}
+	}{message.body.HTML, attachmentBaseUrl, message.attachments}
 	template, err := template.ParseFiles("blog_post.html")
 	if err != nil {
 		return err
@@ -428,7 +431,7 @@ func (message *MailMessage) postToBlog(senderUser *User) error {
 	}
 	if resp.StatusCode != 200 {
 		defer resp.Body.Close()
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		log.Printf("Error posting blog: %s", string(body))
 		return fmt.Errorf("Post failed: status code %d for URL %s", resp.StatusCode, url)
 	}
@@ -503,23 +506,23 @@ func (message *MailMessage) handleError(err error, numSent int) {
 
 	email := &ses.SendEmailInput{
 		Source: aws.String(fmt.Sprintf("%s <%s>", "Mailing List Admin", config.GetString("admin_address"))),
-		Destination: &ses.Destination{
-			ToAddresses: []*string{aws.String(message.from.Address)},
-			CcAddresses: []*string{aws.String(config.GetString("admin_address"))},
+		Destination: &types.Destination{
+			ToAddresses: []string{message.from.Address},
+			CcAddresses: []string{config.GetString("admin_address")},
 		},
-		Message: &ses.Message{
-			Subject: &ses.Content{
+		Message: &types.Message{
+			Subject: &types.Content{
 				Data: aws.String(fmt.Sprintf("Failed to send message \"%s\"", message.subject)),
 			},
-			Body: &ses.Body{
-				Html: &ses.Content{
+			Body: &types.Body{
+				Html: &types.Content{
 					Data: aws.String(buffer.String()),
 				},
 			},
 		},
 	}
 
-	_, err = sesService.SendEmail(email)
+	_, err = sesService.SendEmail(context.Background(), email)
 	if err != nil {
 		log.Printf("Error sending error notification to %s: %v", message.from.Address, err)
 	}
@@ -558,7 +561,7 @@ func (message *MailMessage) handleReplyForwarding() bool {
 		From     *mail.Address
 		HtmlBody string
 		TextBody string
-	}{message.from, message.body.Html, message.body.Text}
+	}{message.from, message.body.HTML, message.body.Text}
 	template, err := template.ParseFiles("reply.html")
 	if err != nil {
 		message.handleError(err, 0)
@@ -574,23 +577,23 @@ func (message *MailMessage) handleReplyForwarding() bool {
 	email := &ses.SendEmailInput{
 		Source: aws.String(fmt.Sprintf("\"%s\" <r-%s@%s>", message.from.Name, encodedFromAddress,
 			config.GetString("host_name"))),
-		Destination: &ses.Destination{
-			ToAddresses: aws.StringSlice(replyAddresses),
-			CcAddresses: []*string{aws.String(config.GetString("admin_address"))},
+		Destination: &types.Destination{
+			ToAddresses: replyAddresses,
+			CcAddresses: []string{config.GetString("admin_address")},
 		},
-		ReplyToAddresses: []*string{aws.String(message.from.Address)},
-		Message: &ses.Message{
-			Subject: &ses.Content{
+		ReplyToAddresses: []string{message.from.Address},
+		Message: &types.Message{
+			Subject: &types.Content{
 				Data: aws.String(message.subject),
 			},
-			Body: &ses.Body{
-				Html: &ses.Content{
+			Body: &types.Body{
+				Html: &types.Content{
 					Data: aws.String(buffer.String()),
 				},
 			},
 		},
 	}
-	_, err = sesService.SendEmail(email)
+	_, err = sesService.SendEmail(context.Background(), email)
 	if err != nil {
 		err = fmt.Errorf("Error forwarding reply: %v", err)
 		message.handleError(err, 0)
