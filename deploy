@@ -4,9 +4,10 @@ set -e
 USER=team254
 HOST=ec2.team254.com
 APP=cheesy-mail
+BRANCH=master
 
-echo "Deploying $APP from Git master branch..."
+echo "Deploying $APP from Git $BRANCH branch..."
 echo
-ssh $USER@$HOST "cd /opt/sites/$APP && git checkout -f && git pull --ff-only origin master && /usr/local/bin/go mod download && /usr/local/bin/go build && sudo -n /usr/bin/systemctl restart $APP.service"
+ssh "$USER@$HOST" "cd /opt/sites/$APP && git fetch origin && git checkout -f $BRANCH && git reset --hard origin/$BRANCH && sudo -n /usr/bin/systemctl start $APP-prepare.service && sudo -n /usr/bin/systemctl restart $APP.service"
 echo
 echo "Deployed $APP."
